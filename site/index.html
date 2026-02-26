@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Citum Labs</title>
+  <meta name="description" content="Citum Labs: experiments and previews for the citation stack.">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f8fafc;
+      --panel: #ffffff;
+      --ink: #0f172a;
+      --muted: #475569;
+      --line: #dbeafe;
+      --brand: #0f766e;
+      --brand-2: #0ea5e9;
+      --ring: rgba(14, 165, 233, 0.22);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1000px 400px at 10% -20%, #e2e8f0 0%, transparent 60%),
+        radial-gradient(900px 420px at 95% -10%, #bae6fd 0%, transparent 62%),
+        var(--bg);
+      min-height: 100vh;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      backdrop-filter: blur(8px);
+      background: rgba(248, 250, 252, 0.88);
+      border-bottom: 1px solid var(--line);
+      z-index: 4;
+    }
+    .wrap {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+    .nav {
+      min-height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .brand {
+      font-size: 1.05rem;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      text-decoration: none;
+      color: var(--ink);
+    }
+    .links {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .links a {
+      text-decoration: none;
+      color: var(--muted);
+      font-weight: 600;
+      padding: 6px 10px;
+      border-radius: 10px;
+    }
+    .links a[aria-current="page"],
+    .links a:hover {
+      color: var(--ink);
+      background: #e0f2fe;
+    }
+    main { padding: 56px 0 72px; }
+    h1 {
+      font-size: clamp(2rem, 5vw, 3rem);
+      margin: 0 0 14px;
+      line-height: 1.1;
+    }
+    p.lead {
+      margin: 0;
+      color: var(--muted);
+      max-width: 70ch;
+      font-size: 1.08rem;
+      line-height: 1.65;
+    }
+    .grid {
+      margin-top: 36px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: 0 8px 22px rgba(2, 6, 23, 0.05);
+    }
+    .card h2 {
+      margin: 0 0 8px;
+      font-size: 1.02rem;
+    }
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 0.96rem;
+    }
+    .cta {
+      margin-top: 26px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      color: #fff;
+      background: linear-gradient(120deg, var(--brand), var(--brand-2));
+      border-radius: 11px;
+      padding: 11px 16px;
+      font-weight: 700;
+      box-shadow: 0 8px 20px var(--ring);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap nav">
+      <a class="brand" href="https://citum.org">Citum</a>
+      <nav class="links" aria-label="Global">
+        <a href="https://citum.org">Home</a>
+        <a href="https://docs.citum.org">Docs</a>
+        <a href="https://hub.citum.org">Hub</a>
+        <a href="https://labs.citum.org" aria-current="page">Labs</a>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap">
+    <h1>Citum Labs</h1>
+    <p class="lead">Sandbox for new workflows, migration utilities, and rendering experiments before they graduate into stable releases.</p>
+    <a class="cta" href="https://github.com/citum/citum-labs">Open Repository</a>
+    <section class="grid" aria-label="Sections">
+      <article class="card">
+        <h2>Prototypes</h2>
+        <p>UI and engine ideas under active iteration with short feedback loops.</p>
+      </article>
+      <article class="card">
+        <h2>Migration Trials</h2>
+        <p>Candidate approaches for parent-style conversions and fidelity checks.</p>
+      </article>
+      <article class="card">
+        <h2>Integration Tests</h2>
+        <p>Cross-project compatibility and handoff validation before promotion.</p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
