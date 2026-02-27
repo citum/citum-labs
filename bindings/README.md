@@ -1,4 +1,4 @@
-# CSLN Language Bindings
+# Citum Language Bindings
 
 This directory contains language-specific bindings and documentation for interfacing with the CSLN (Citation Style Language Next) processor from other environments.
 
