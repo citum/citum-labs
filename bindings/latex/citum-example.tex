@@ -1,0 +1,90 @@
+% citum-example.tex — Full demonstration of the Citum LuaLaTeX package
+%
+% Usage:
+%   lualatex citum-example.tex
+%
+% Requirements:
+%   1. The 'citum' engine must be compiled with the 'ffi' feature.
+%   2. Either set CITUM_LIB_PATH to the full path of libcitum_processor.dylib/.so,
+%      or place the library in the same directory as this file.
+%   3. Either set CITUM_LUA_PATH to the full path of citum.lua,
+%      or place citum.lua and citum.sty in the same directory as this file.
+
+\documentclass{article}
+\usepackage[margin=1.2in]{geometry}
+\usepackage{fontspec}
+\usepackage{hyperref}
+
+% Citum citation package
+%   style   = path to a Citum YAML style file (extension optional)
+%   bibfile = path to a Citum YAML bibliography (extension optional)
+\usepackage[
+    style   = apa-7th,
+    bibfile = example-refs
+]{citum}
+
+\title{Modern Citations in Lua\LaTeX\\
+       A Demonstration of Citum in Lua\LaTeX}
+\author{Citum Labs}
+\date{March 2026}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+
+This document demonstrates the Citum citation engine 
+integrated directly into Lua\LaTeX. 
+
+Citations are rendered live by the Citum Rust processor via a LuaJIT FFI 
+binding. There is no need for external tools like Biber or BibTeX; the 
+rendering happens during the Lua\LaTeX{} pass itself.
+
+\section{Citation Examples}
+
+\subsection{Standard Citations}
+
+You can use the standard \verb|\cite| command for non-integral citations. 
+For example, we might discuss the structure of scientific revolutions 
+\cite{kuhn1962}.
+
+Optional locators are supported: \cite[p. 52]{kuhn1962}.
+
+\subsection{Integral Citations}
+
+Integral citations (where the author is part of the sentence) use 
+\verb|\textcite|. As \textcite{lecun2015} argues, deep learning is a 
+powerful tool. 
+
+Locators work here too: \textcite[ch. 3]{lecun2015} provides more detail.
+
+\subsection{Multiple Citations}
+
+Multiple keys can be cited at once using \verb|\cites{key1, key2}|: 
+\cites{kuhn1962, lecun2015}.
+
+\subsection{Complex Multi-item Citations}
+
+For per-item locators or prefixes in a group, use the \verb|\citestart|, 
+\verb|\citeitem|, and \verb|\citeend| block:
+\citestart
+  \citeitem[see]{kuhn1962}
+  \citeitem[also]{lecun2015}
+\citeend
+
+\section{Technical Advantages}
+
+The Citum processor renders these citations --- non-integral parentheticals, 
+integral name-date combinations, and the final bibliography --- using a 
+unified rendering engine. This ensures that disambiguation, sorting, and 
+formatting are consistent across all output formats.
+
+\section{Bibliography}
+
+The bibliography is printed with \verb|\printbibliography| (or 
+\verb|\printcitumbibliography|).
+
+\printbibliography
+
+\end{document}

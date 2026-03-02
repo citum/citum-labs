@@ -1,0 +1,125 @@
+% citum.sty — Citum LaTeX Package for LuaLaTeX
+% Integrates the Citum Rust citation processor into LuaLaTeX via LuaJIT FFI.
+% Usage:
+%   \usepackage[style=apa-7th, bibfile=refs]{citum}            % Citum YAML bib
+%   \usepackage[style=apa-7th, bibfile=refs.bib]{citum}        % biblatex .bib
+%
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{citum}[2026/03/02 v0.2.0 Citum citation processor]
+
+\RequirePackage{kvoptions}
+\RequirePackage{etoolbox}
+
+\ifx\directlua\undefined
+  \PackageError{citum}{citum requires LuaLaTeX}\relax
+\fi
+
+\SetupKeyvalOptions{family=citum,prefix=citum@}
+\DeclareStringOption[apa-7th]{style}
+\DeclareStringOption{bibfile}
+\ProcessKeyvalOptions*
+
+\ifcsvoid{citum@bibfile}{
+  \PackageError{citum}{No bibfile specified. Use \usepackage[bibfile=...]{citum}}{}
+}{}
+
+% Path to a Citum YAML style file (without extension, resolved via kpse, or
+% absolute path).
+\def\citum@style{\citum@style}
+
+% Bibliography file:
+%   .bib  → biblatex format   (uses citum_processor_new_from_bib)
+%   other → Citum YAML format  (uses citum_processor_new_from_yaml)
+% Omit extension to default to Citum YAML (.yaml).
+\def\citum@bibfile{\citum@bibfile}
+
+\directlua{
+  local function find_citum_lua()
+    local env = os.getenv("CITUM_LUA_PATH")
+    if env and env ~= "" then return env end
+    
+    local sty_path = kpse.find_file("citum.sty", "tex") or ""
+    if sty_path ~= "" then
+      local last_slash = sty_path:match("(.*[/\\])")
+      if last_slash then
+        local candidate = last_slash .. "citum.lua"
+        if lfs.attributes(candidate) then return candidate end
+      end
+    end
+    
+    return kpse.find_file("citum.lua", "lua")
+  end
+
+  local citum_lua = find_citum_lua()
+  if not citum_lua then
+    error("citum.sty: cannot find citum.lua. "
+      .. "Set CITUM_LUA_PATH or place citum.lua next to citum.sty.")
+  end
+
+  local ok, result = pcall(dofile, citum_lua)
+  if not ok then
+    error("citum.sty: failed to load citum.lua: " .. tostring(result))
+  end
+  citum_module = result
+  if not citum_module then
+    error("citum.sty: citum.lua returned nil. Check libcitum_processor is built.")
+  end
+
+  if citum_module then
+    citum_proc = citum_module.init_processor(
+      "\citum@style", "\citum@bibfile"
+    )
+  end
+}
+
+% parse_locator, do_cite, cite_single, etc. are all in citum.lua.
+
+\renewcommand{\cite}[2][]{%
+  \directlua{citum_module.cite_single(citum_proc, 
+    "\luaescapestring{#1}", "\luaescapestring{#2}")}%
+}
+
+\newcommand{\textcite}[2][]{%
+  \directlua{citum_module.textcite_single(citum_proc, 
+    "\luaescapestring{#1}", "\luaescapestring{#2}")}%
+}
+
+\newcommand{\cites}[1]{%
+  \directlua{citum_module.cite_keys(citum_proc, "\luaescapestring{#1}")}%
+}
+
+\newcommand{\textcites}[1]{%
+  \directlua{citum_module.textcite_keys(citum_proc, "\luaescapestring{#1}")}%
+}
+
+\newcommand{\citestart}{%
+  \directlua{citum_module.cites_start()}%
+}
+
+\newcommand{\citeitem}[2][]{%
+  \directlua{citum_module.cites_add(
+    "\luaescapestring{#1}", "\luaescapestring{#2}")}%
+}
+
+\newcommand{\citeend}{%
+  \directlua{citum_module.cites_flush(citum_proc)}%
+}
+
+\newcommand{\textciteend}{%
+  \directlua{citum_module.cites_flush_integral(citum_proc)}%
+}
+
+% Switch style or bib file at runtime
+\newcommand{\citumsetup}[1]{%
+  \setkeys{citum}{#1}%
+  \directlua{citum_proc = citum_module.init_processor(
+    "\citum@style", "\luaescapestring{#1}")}%
+}
+
+\newcommand{\printcitumbibliography}{%
+  \directlua{citum_module.print_bibliography(citum_proc)}%
+}
+
+\providecommand{\printbibliography}{\printcitumbibliography}
+
+\endinput
