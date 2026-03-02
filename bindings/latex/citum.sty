@@ -2,10 +2,10 @@
 % Integrates the Citum Rust citation processor into LuaLaTeX via LuaJIT FFI.
 % Usage:
 %   \usepackage[style=apa-7th, bibfile=refs]{citum}            % Citum YAML bib
-%   \usepackage[style=apa-7th, bibfile=refs.bib]{citum}        % biblatex .bib
+%   \usepackage[style=apa-7th, bibfile=refs.bib, locale=en-US]{citum}
 %
 \NeedsTeXFormat{LaTeX2e}
-\ProvidesPackage{citum}[2026/03/02 v0.2.0 Citum citation processor]
+\ProvidesPackage{citum}[2026/03/02 v0.2.1 Citum citation processor]
 
 \RequirePackage{kvoptions}
 \RequirePackage{etoolbox}
@@ -17,6 +17,7 @@
 \SetupKeyvalOptions{family=citum,prefix=citum@}
 \DeclareStringOption[apa-7th]{style}
 \DeclareStringOption{bibfile}
+\DeclareStringOption{locale}
 \ProcessKeyvalOptions*
 
 \ifcsvoid{citum@bibfile}{
@@ -32,6 +33,9 @@
 %   other → Citum YAML format  (uses citum_processor_new_from_yaml)
 % Omit extension to default to Citum YAML (.yaml).
 \def\citum@bibfile{\citum@bibfile}
+
+% Optional locale name (e.g. en-US, fr-FR).
+\def\citum@locale{\citum@locale}
 
 \directlua{
   local function find_citum_lua()
@@ -67,7 +71,7 @@
 
   if citum_module then
     citum_proc = citum_module.init_processor(
-      "\citum@style", "\citum@bibfile"
+      "\citum@style", "\citum@bibfile", "\citum@locale"
     )
   end
 }
@@ -113,7 +117,7 @@
 \newcommand{\citumsetup}[1]{%
   \setkeys{citum}{#1}%
   \directlua{citum_proc = citum_module.init_processor(
-    "\citum@style", "\luaescapestring{#1}")}%
+    "\citum@style", "\citum@bibfile", "\citum@locale")}%
 }
 
 \newcommand{\printcitumbibliography}{%

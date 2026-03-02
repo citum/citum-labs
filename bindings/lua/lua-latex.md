@@ -53,12 +53,20 @@ lualatex citum-example.tex
 ## LaTeX package (`citum.sty`)
 
 ```latex
-\usepackage[style=apa-7th, bibfile=refs]{citum}        % Citum YAML bib
-\usepackage[style=apa-7th, bibfile=refs.bib]{citum}    % biblatex .bib
+\usepackage[style=apa-7th, bibfile=refs]{citum}               % Citum YAML bib
+\usepackage[style=apa-7th, bibfile=refs.bib, locale=fr-FR]{citum} % with locale
 ```
 
 The bibliography format is selected automatically by file extension:
 `.bib` → biblatex parser; anything else → Citum YAML parser.
+
+### Package Options
+
+| Option | Description |
+|---|---|
+| `style` | Path to a Citum YAML style file (extension optional) |
+| `bibfile` | Path to a bibliography file (.yaml or .bib) |
+| `locale` | Optional locale name (e.g., `en-GB`, `fr-FR`) |
 
 ### Citation commands
 
@@ -97,37 +105,40 @@ then falls back to `kpse` resolution.
 ```lua
 local citum = require("citum")
 
+-- Engine information
+print(citum.version())
+
 -- File-based constructors (preferred for LaTeX use)
 local proc = citum.from_yaml("/path/to/style.yaml", "/path/to/refs.yaml")
 local proc = citum.from_bib("/path/to/style.yaml", "/path/to/refs.bib")
 
 -- In-memory JSON constructor (lower-level)
 local proc = citum.new(style_json, bib_json)
+local proc = citum.new_with_locale(style_json, bib_json, locale_json)
+
+-- Error handling
+if not proc then
+    print(citum.get_last_error())
+end
 
 -- Render a single citation (bare key shorthand)
 local s = proc:render_citation("kuhn1962")
 
--- Render with the full citation model
-local s = proc:render_citation({
-    mode            = "integral",          -- or "non-integral" (default)
-    suppress_author = false,
-    prefix          = "e.g.,",
-    suffix          = "passim",
-    items = {
-        { id = "kuhn1962",   label = "page",    locator = "52" },
-        { id = "lecun2015",  label = "chapter", locator = "3",
-          prefix = "see also" },
-    },
-})
+-- Batch rendering (returns JSON array of strings)
+local results = proc:render_citations_batch({
+  { id = "kuhn1962" },
+  { id = "lecun2015", mode = "integral" }
+}, "latex")
 
 -- Render bibliography
 local bbl = proc:render_bibliography()
 
--- HTML / plain text variants
-local s   = proc:render_citation_html(opts)
-local s   = proc:render_citation_plain(opts)
-local bbl = proc:render_bibliography_html()
-local bbl = proc:render_bibliography_plain()
+-- Additional output formats
+local s = proc:render_citation_html(opts)
+local s = proc:render_citation_djot(opts)
+local s = proc:render_citation_typst(opts)
+
+local bbl = proc:render_bibliography_grouped_html()
 
 proc:free()   -- optional; GC finalizer handles this automatically
 ```
