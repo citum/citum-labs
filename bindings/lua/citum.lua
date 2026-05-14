@@ -7,13 +7,13 @@ ffi.cdef[[
     typedef struct Processor Processor;
 
     Processor* citum_processor_new(const char* style_json, const char* bib_json);
-    Processor* citum_processor_new_with_locale(const char* style_json, 
+    Processor* citum_processor_new_with_locale(const char* style_json,
         const char* bib_json, const char* locale_json);
-    
-    Processor* citum_processor_new_from_yaml(const char* style_yaml_path, 
-        const char* bib_yaml_path);
-    Processor* citum_processor_new_from_bib(const char* style_yaml_path, 
-        const char* bib_path);
+
+    Processor* citum_processor_new_from_yaml(const char* style_yaml,
+        const char* bib_yaml);
+    Processor* citum_processor_new_with_locale_from_yaml(const char* style_yaml,
+        const char* bib_yaml, const char* locale_yaml);
 
     void citum_processor_free(Processor* processor);
 
@@ -58,15 +58,14 @@ local function load_lib()
     if env_path and env_path ~= "" then
         return ffi.load(env_path)
     end
-    
+
     local name = get_lib_filename()
     local ok, lib = pcall(ffi.load, name)
     if ok then return lib end
-    
-    -- Fallback: check current directory or standard paths
-    local ok, lib = pcall(ffi.load, "./" .. name)
-    if ok then return lib end
-    
+
+    local ok2, lib2 = pcall(ffi.load, "./" .. name)
+    if ok2 then return lib2 end
+
     error("Could not load Citum shared library (" .. name .. "). "
       .. "Set CITUM_LIB_PATH to the absolute path of the library.")
 end
@@ -78,6 +77,16 @@ local function to_lua_string(c_str)
     local s = ffi.string(c_str)
     lib.citum_string_free(c_str)
     return s
+end
+
+local function read_file(path)
+    local f, err = io.open(path, "r")
+    if not f then
+        error("citum: cannot open file '" .. path .. "': " .. tostring(err))
+    end
+    local content = f:read("*a")
+    f:close()
+    return content
 end
 
 --- Get the last error from the Citum engine.
@@ -94,18 +103,18 @@ end
 function CITUM.new(style_json, bib_json)
     local self = setmetatable({}, CITUM)
     self.ptr = lib.citum_processor_new(style_json, bib_json)
-    if self.ptr == nil then 
+    if self.ptr == nil then
         return nil, "Failed to initialise Citum processor: " .. (CITUM.get_last_error() or "unknown error")
     end
     ffi.gc(self.ptr, lib.citum_processor_free)
     return self
 end
 
---- Create a new Citum processor with a specific locale.
+--- Create a new Citum processor with a specific locale, from JSON strings.
 function CITUM.new_with_locale(style_json, bib_json, locale_json)
     local self = setmetatable({}, CITUM)
     self.ptr = lib.citum_processor_new_with_locale(style_json, bib_json, locale_json)
-    if self.ptr == nil then 
+    if self.ptr == nil then
         return nil, "Failed to initialise Citum processor with locale: " .. (CITUM.get_last_error() or "unknown error")
     end
     ffi.gc(self.ptr, lib.citum_processor_free)
@@ -113,27 +122,54 @@ function CITUM.new_with_locale(style_json, bib_json, locale_json)
 end
 
 --- Create a processor from Citum YAML files on disk (primary format).
+-- Reads file contents and passes YAML strings to the FFI.
 function CITUM.from_yaml(style_path, bib_path)
-    local self = setmetatable({}, CITUM)
-    self.ptr = lib.citum_processor_new_from_yaml(style_path, bib_path)
-    if self.ptr == nil then 
-        return nil, "Failed to initialise Citum processor from YAML files: " 
+    local style_str = read_file(style_path)
+    local bib_str   = read_file(bib_path)
+    local ptr = lib.citum_processor_new_from_yaml(style_str, bib_str)
+    if ptr == nil then
+        return nil, "Failed to initialise Citum processor from YAML files: "
           .. style_path .. ", " .. bib_path .. " (" .. (CITUM.get_last_error() or "unknown error") .. ")"
     end
+    local self = setmetatable({}, CITUM)
+    self.ptr = ptr
     ffi.gc(self.ptr, lib.citum_processor_free)
     return self
 end
 
---- Create a processor from a Citum YAML style and a biblatex .bib file.
-function CITUM.from_bib(style_path, bib_path)
-    local self = setmetatable({}, CITUM)
-    self.ptr = lib.citum_processor_new_from_bib(style_path, bib_path)
-    if self.ptr == nil then 
-        return nil, "Failed to initialise Citum processor from .bib file: " 
-          .. bib_path .. " (" .. (CITUM.get_last_error() or "unknown error") .. ")"
+--- Create a processor from Citum YAML files with a locale.
+-- locale may be a .yaml file path, a multi-line YAML string, or a bare locale
+-- ID like "en-US" (produces a minimal locale; engine uses built-in term tables).
+function CITUM.from_yaml_with_locale(style_path, bib_path, locale)
+    if not locale or locale == "" then
+        return nil, "citum: locale is required for from_yaml_with_locale"
     end
+    local style_str = read_file(style_path)
+    local bib_str   = read_file(bib_path)
+    local locale_str
+    if locale:match("%.ya?ml$") then
+        locale_str = read_file(locale)
+    elseif locale:match("\n") then
+        locale_str = locale
+    else
+        locale_str = "locale: " .. locale
+    end
+    local ptr = lib.citum_processor_new_with_locale_from_yaml(style_str, bib_str, locale_str)
+    if ptr == nil then
+        return nil, "Failed to initialise Citum processor with locale: "
+          .. (CITUM.get_last_error() or "unknown error")
+    end
+    local self = setmetatable({}, CITUM)
+    self.ptr = ptr
     ffi.gc(self.ptr, lib.citum_processor_free)
     return self
+end
+
+--- Not supported: biblatex .bib input is not available via the C FFI.
+-- Convert your bibliography to Citum YAML format and use from_yaml instead.
+function CITUM.from_bib(_style_path, bib_path)
+    return nil, "citum: biblatex .bib input (" .. bib_path .. ") is not supported "
+      .. "via the C FFI. Convert to Citum YAML bib format and use from_yaml."
 end
 
 function CITUM:free()
@@ -159,12 +195,12 @@ local function generate_cite_json(opts)
         if item.suffix then table.insert(parts, '"suffix":"' .. item.suffix .. '"') end
         table.insert(items, "{" .. table.concat(parts, ",") .. "}")
     end
-    
+
     local root = {'"items":[' .. table.concat(items, ",") .. ']'}
     if opts.mode then table.insert(root, '"mode":"' .. opts.mode .. '"') end
     if opts.prefix then table.insert(root, '"prefix":"' .. opts.prefix .. '"') end
     if opts.suffix then table.insert(root, '"suffix":"' .. opts.suffix .. '"') end
-    
+
     return "{" .. table.concat(root, ",") .. "}"
 end
 
@@ -250,27 +286,27 @@ CITUM.locator_labels = {
 --- Infer a Citum locator label and value from a raw biblatex optional-arg string.
 function CITUM.parse_locator(s)
     if not s or s == "" then return nil, nil end
-    
+
     for prefix, label in pairs(CITUM.locator_labels) do
         if s:sub(1, #prefix) == prefix then
             local val = s:sub(#prefix + 1):gsub("^%s+", "")
             return label, val
         end
     end
-    
+
     -- Default to page if it looks like a number
     if s:match("^%d") then
         return "page", s
     end
-    
+
     return nil, s
 end
 
 -- Helper for the LaTeX package
 function CITUM.do_cite(proc, cite_opts)
-    if not proc then 
+    if not proc then
         tex.sprint("[citum: processor not initialised]")
-        return 
+        return
     end
     local ok, res = pcall(function() return proc:render_citation(cite_opts) end)
     if ok then
@@ -337,26 +373,18 @@ function CITUM.textcite_keys(proc, keys_str)
 end
 
 function CITUM.init_processor(style_opt, bibfile, locale_opt)
-    local style_path = style_opt
-    local bib_path = bibfile
-    
-    local proc, err
-    if locale_opt and locale_opt ~= "" then
-        -- For now, this requires the locale JSON string. 
-        -- In a real LaTeX environment, we'd need to resolve the locale file.
-        -- But since we're mostly dealing with path-based init for now:
-        -- proc, err = CITUM.new_with_locale(style_json, bib_json, locale_json)
-        -- We'll stick to the existing yaml/bib helpers but maybe they need locale support in core.
-        -- For now, let's just use the standard init and warn if locale is requested but unsupported by helper.
-        -- Actually, FFI only has path-based init WITHOUT locale.
+    if bibfile:match("%.bib$") then
+        error("citum: biblatex .bib input is not supported via the C FFI. "
+          .. "Convert '" .. bibfile .. "' to Citum YAML bib format.")
     end
 
-    if bib_path:match("%.bib$") then
-        proc, err = CITUM.from_bib(style_path, bib_path)
+    local proc, err
+    if locale_opt and locale_opt ~= "" then
+        proc, err = CITUM.from_yaml_with_locale(style_opt, bibfile, locale_opt)
     else
-        proc, err = CITUM.from_yaml(style_path, bib_path)
+        proc, err = CITUM.from_yaml(style_opt, bibfile)
     end
-    
+
     if not proc then
         error("citum: failed to init processor. " .. tostring(err))
     end
@@ -364,9 +392,9 @@ function CITUM.init_processor(style_opt, bibfile, locale_opt)
 end
 
 function CITUM.print_bibliography(proc)
-    if not proc then 
+    if not proc then
         tex.sprint("[citum: processor not initialised]")
-        return 
+        return
     end
     local ok, res = pcall(function() return proc:render_bibliography() end)
     if ok then
