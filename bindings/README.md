@@ -41,15 +41,28 @@ Use `node-ffi-napi` or the native FFI support in Bun/Deno.
 
 The FFI exports the following C-compatible symbols:
 
-- `citum_processor_new`: Initialize a stateful processor with Style and Bibliography JSON.
-- `citum_processor_new_with_locale`: Initialize with a specific Locale JSON.
-- `citum_processor_free`: Safely deallocate the processor.
-- `citum_render_citation_latex`: Render a citation to LaTeX.
-- `citum_render_citation_html`: Render a citation to HTML.
-- `citum_render_citation_plain`: Render a citation to Plain Text.
-- `citum_render_bibliography_latex`: Render the full bibliography to LaTeX.
-- `citum_render_bibliography_html`: Render the full bibliography to HTML.
-- `citum_render_bibliography_plain`: Render the full bibliography to Plain Text.
-- `citum_string_free`: Free strings allocated by the Rust core.
+### Lifecycle
 
-See `crates/citum-engine/src/ffi.rs` in the Citum core repository for the full C signatures.
+- `citum_processor_new(style_json, bib_json)`: Initialize from JSON strings.
+- `citum_processor_new_with_locale(style_json, bib_json, locale_json)`: Initialize from JSON with a locale.
+- `citum_processor_new_from_yaml(style_yaml, bib_yaml)`: Initialize from YAML strings (preferred for Lua/LaTeX consumers).
+- `citum_processor_new_with_locale_from_yaml(style_yaml, bib_yaml, locale_yaml)`: Initialize from YAML with a locale.
+- `citum_processor_free(processor)`: Safely deallocate the processor.
+
+### Citation rendering
+
+- `citum_render_citation_latex`, `_html`, `_plain`, `_djot`, `_typst`: Render a single citation.
+- `citum_render_citations_json(processor, citations_json, format)`: Render a batch of citations; `format` is one of `latex`, `html`, `plain`, `djot`, `typst`.
+
+### Bibliography rendering
+
+- `citum_render_bibliography_latex`, `_html`, `_plain`, `_djot`, `_typst`: Render the full bibliography.
+- `citum_render_bibliography_grouped_html`, `_grouped_plain`: Render a grouped bibliography.
+
+### Utilities
+
+- `citum_version()`: Return the engine version string.
+- `citum_get_last_error()`: Return the last error message (call after a null return).
+- `citum_string_free(s)`: Free any string returned by the FFI.
+
+See `crates/citum-engine/src/ffi/mod.rs` in the citum-core repository for the full C signatures.
