@@ -15,19 +15,20 @@ This directory contains the `citum.sty` package, which brings the Citum citation
 - `locale`: Optional BCP 47 locale (e.g., `en-US`).
 - `rpc`: Boolean (default `false`). If `true`, uses a remote Citum server instead of the local shared library.
 
-## RPC Mode (Fallback)
+## RPC Mode (Automatic Fallback)
 
-If you cannot or do not want to use the Citum Rust shared library (`libcitum_processor`), you can use **RPC mode**. This is the recommended way to distribute Citum-powered documents without requiring custom binaries.
+If the Citum Rust shared library (`libcitum_processor`) is not found on your system, the package will **automatically fallback to RPC mode**. This allows you to use Citum without installing custom binaries in your TeX path, provided you have the server running.
 
 1. **Install and run `citum-server`**:
    ```bash
    # Run the server on the default port 9000
    citum-server --port 9000
    ```
-2. **Enable RPC in your document**:
+2. **Compile as usual**:
    ```latex
-   \usepackage[rpc, style=apa-7th, bibfile=refs]{citum}
+   \usepackage[style=apa-7th, bibfile=refs]{citum}
    ```
+   The package will detect the missing library and attempt to connect to the server at `localhost:9000`. You can also force RPC mode by adding the `rpc` option: `\usepackage[rpc, ...]{citum}`.
 
 ## Requirements & Workflow
 

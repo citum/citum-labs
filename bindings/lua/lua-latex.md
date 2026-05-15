@@ -45,8 +45,10 @@ or a network-based RPC fallback to a standalone `citum-server`.
    ```
 2. **Configure LaTeX**:
    ```latex
-   \usepackage[rpc, style=..., bibfile=...]{citum}
+   \usepackage[style=..., bibfile=...]{citum}
    ```
+   If the shared library is not found, Citum **automatically falls back to RPC mode**. You can also force it with the `rpc` option if the library is present but you prefer the server.
+
 3. **Compile twice**: `lualatex doc.tex` (Pass 1), then `lualatex doc.tex` (Pass 2).
 
 ---

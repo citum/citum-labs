@@ -510,18 +510,24 @@ function CITUM.textcite_keys(_proc, keys_str)
     CITUM.record_cite({ mode = "integral", items = items })
 end
 
-function CITUM.init_processor(style_opt, bibfile, locale_opt, jobname, rpc)
-    CITUM.config.rpc = rpc
+function CITUM.init_processor(style_opt, bibfile, locale_opt, jobname, rpc_requested)
     CITUM.load_cache(jobname)
 
-    if rpc then
-        -- In RPC mode, we don't need a local processor object
-        return { dummy = true }
+    -- Determine backend: 
+    -- 1. Use RPC if explicitly requested via package option
+    -- 2. Use RPC if FFI library (lib) is not available
+    -- 3. Otherwise use FFI
+    if rpc_requested then
+        CITUM.config.rpc = true
+    elseif not lib then
+        CITUM.config.rpc = true
+    else
+        CITUM.config.rpc = false
     end
 
-    if not lib then
-        error("citum: FFI library not loaded and RPC mode not enabled. "
-          .. "Check CITUM_LIB_PATH or use rpc=true.")
+    if CITUM.config.rpc then
+        -- In RPC mode, we don't need a local processor object
+        return { dummy = true }
     end
 
     if bibfile:match("%.bib$") then
