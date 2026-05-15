@@ -1,79 +1,90 @@
 -- Citum LuaJIT Binding
 -- This module provides a high-level Lua interface to the Citum Rust processor.
 
-local ffi = require("ffi")
-
-ffi.cdef[[
-    typedef struct Processor Processor;
-
-    Processor* citum_processor_new(const char* style_json, const char* bib_json);
-    Processor* citum_processor_new_with_locale(const char* style_json,
-        const char* bib_json, const char* locale_json);
-
-    Processor* citum_processor_new_from_yaml(const char* style_yaml,
-        const char* bib_yaml);
-    Processor* citum_processor_new_with_locale_from_yaml(const char* style_yaml,
-        const char* bib_yaml, const char* locale_yaml);
-
-    void citum_processor_free(Processor* processor);
-
-    char* citum_get_last_error();
-    char* citum_version();
-
-    char* citum_render_citation_latex(Processor* processor, const char* cite_json);
-    char* citum_render_citation_html(Processor* processor, const char* cite_json);
-    char* citum_render_citation_plain(Processor* processor, const char* cite_json);
-    char* citum_render_citation_djot(Processor* processor, const char* cite_json);
-    char* citum_render_citation_typst(Processor* processor, const char* cite_json);
-
-    char* citum_render_bibliography_latex(Processor* processor);
-    char* citum_render_bibliography_html(Processor* processor);
-    char* citum_render_bibliography_plain(Processor* processor);
-    char* citum_render_bibliography_djot(Processor* processor);
-    char* citum_render_bibliography_typst(Processor* processor);
-
-    char* citum_render_bibliography_grouped_html(Processor* processor);
-    char* citum_render_bibliography_grouped_plain(Processor* processor);
-
-    char* citum_render_citations_json(Processor* processor, const char* citations_json, const char* format);
-
-    void citum_string_free(char* s);
-]]
-
 local CITUM = {}
 CITUM.__index = CITUM
 
-local function get_lib_filename()
-    local os_name = "Linux"
-    if ffi.os == "OSX" then os_name = "OSX" end
-    if ffi.os == "Windows" then os_name = "Windows" end
+-- State for multi-pass LaTeX processing
+CITUM.document_citations = {}
+CITUM.cached_results = { citations = {}, bibliography = "" }
+CITUM.citation_index = 0
+CITUM.config = { rpc = false, rpc_url = "http://localhost:9000", jobname = "texput" }
 
-    if os_name == "OSX"     then return "libcitum_processor.dylib" end
-    if os_name == "Windows" then return "citum_engine.dll" end
-    return "libcitum_processor.so"
-end
+local json = require("utilities.json")
 
-local function load_lib()
-    local env_path = os.getenv("CITUM_LIB_PATH")
-    if env_path and env_path ~= "" then
-        return ffi.load(env_path)
+local ffi_ok, ffi = pcall(require, "ffi")
+local lib = nil
+
+if ffi_ok then
+    ffi.cdef[[
+        typedef struct Processor Processor;
+
+        Processor* citum_processor_new(const char* style_json, const char* bib_json);
+        Processor* citum_processor_new_with_locale(const char* style_json,
+            const char* bib_json, const char* locale_json);
+
+        Processor* citum_processor_new_from_yaml(const char* style_yaml,
+            const char* bib_yaml);
+        Processor* citum_processor_new_with_locale_from_yaml(const char* style_yaml,
+            const char* bib_yaml, const char* locale_yaml);
+
+        void citum_processor_free(Processor* processor);
+
+        char* citum_get_last_error();
+        char* citum_version();
+
+        char* citum_render_citation_latex(Processor* processor, const char* cite_json);
+        char* citum_render_citation_html(Processor* processor, const char* cite_json);
+        char* citum_render_citation_plain(Processor* processor, const char* cite_json);
+        char* citum_render_citation_djot(Processor* processor, const char* cite_json);
+        char* citum_render_citation_typst(Processor* processor, const char* cite_json);
+
+        char* citum_render_bibliography_latex(Processor* processor);
+        char* citum_render_bibliography_html(Processor* processor);
+        char* citum_render_bibliography_plain(Processor* processor);
+        char* citum_render_bibliography_djot(Processor* processor);
+        char* citum_render_bibliography_typst(Processor* processor);
+
+        char* citum_render_bibliography_grouped_html(Processor* processor);
+        char* citum_render_bibliography_grouped_plain(Processor* processor);
+
+        char* citum_render_citations_json(Processor* processor, const char* citations_json, const char* format);
+
+        void citum_string_free(char* s);
+    ]]
+
+    local function get_lib_filename()
+        local os_name = "Linux"
+        if ffi.os == "OSX" then os_name = "OSX" end
+        if ffi.os == "Windows" then os_name = "Windows" end
+
+        if os_name == "OSX"     then return "libcitum_processor.dylib" end
+        if os_name == "Windows" then return "citum_engine.dll" end
+        return "libcitum_processor.so"
     end
 
-    local name = get_lib_filename()
-    local ok, lib = pcall(ffi.load, name)
-    if ok then return lib end
+    local function load_lib()
+        local env_path = os.getenv("CITUM_LIB_PATH")
+        if env_path and env_path ~= "" then
+            local ok, l = pcall(ffi.load, env_path)
+            if ok then return l end
+        end
 
-    local ok2, lib2 = pcall(ffi.load, "./" .. name)
-    if ok2 then return lib2 end
+        local name = get_lib_filename()
+        local ok, l = pcall(ffi.load, name)
+        if ok then return l end
 
-    error("Could not load Citum shared library (" .. name .. "). "
-      .. "Set CITUM_LIB_PATH to the absolute path of the library.")
+        local ok2, l2 = pcall(ffi.load, "./" .. name)
+        if ok2 then return l2 end
+
+        return nil
+    end
+
+    lib = load_lib()
 end
 
-local lib = load_lib()
-
 local function to_lua_string(c_str)
-    if c_str == nil then return nil end
+    if not lib or c_str == nil then return nil end
     local s = ffi.string(c_str)
     lib.citum_string_free(c_str)
     return s
@@ -283,6 +294,130 @@ CITUM.locator_labels = {
     ["§"]     = "section",
 }
 
+function CITUM.load_cache(jobname)
+    CITUM.config.jobname = jobname
+    CITUM.citation_index = 0
+    CITUM.document_citations = {}
+    local path = jobname .. ".citum.json"
+    local f = io.open(path, "r")
+    if f then
+        local content = f:read("*a")
+        f:close()
+        local ok, data = pcall(json.tolua, content)
+        if ok and data then
+            CITUM.cached_results = data
+        end
+    end
+end
+
+function CITUM.save_cache(data)
+    local path = CITUM.config.jobname .. ".citum.json"
+    local f = io.open(path, "w")
+    if f then
+        f:write(json.tostring(data))
+        f:close()
+    end
+end
+
+local function http_post(url, payload)
+    local http = require("socket.http")
+    local ltn12 = require("ltn12")
+
+    local response_body = {}
+    local res, code, response_headers = http.request{
+        url = url,
+        method = "POST",
+        headers = {
+            ["Content-Type"] = "application/json",
+            ["Content-Length"] = #payload
+        },
+        source = ltn12.source.string(payload),
+        sink = ltn12.sink.table(response_body)
+    }
+
+    if not res then
+        return nil, "HTTP request failed: " .. tostring(code)
+    end
+    if code ~= 200 then
+        return nil, "Server returned error " .. code .. ": " .. table.concat(response_body)
+    end
+
+    return table.concat(response_body)
+end
+
+function CITUM.process_document(proc, style_path, bib_path, locale)
+    local citations = CITUM.document_citations
+    local format = "latex"
+    local results = { citations = {}, bibliography = "" }
+
+    if CITUM.config.rpc then
+        local style_str = read_file(style_path)
+        local bib_str = read_file(bib_path)
+        
+        -- Build JSON-RPC request
+        local request = {
+            jsonrpc = "2.0",
+            method = "format_document",
+            params = {
+                style = { kind = "yaml", value = style_str },
+                refs = bib_str, -- Assuming server accepts YAML string for refs
+                locale = locale,
+                output_format = format,
+                citations = citations
+            },
+            id = 1
+        }
+        
+        local ok, payload = pcall(json.tostring, request)
+        if not ok then error("citum: failed to encode RPC request: " .. tostring(payload)) end
+        
+        local response, err = http_post(CITUM.config.rpc_url, payload)
+        if not response then
+            tex.print("\\PackageWarning{citum}{RPC error: " .. err .. "}")
+            return
+        end
+        
+        local ok2, data = pcall(json.tolua, response)
+        if not ok2 or not data or not data.result then
+            error("citum: failed to parse RPC response: " .. tostring(data))
+        end
+        
+        results.citations = data.result.citations or {}
+        results.bibliography = data.result.bibliography or ""
+    else
+        -- FFI Batch processing
+        if not proc then return end
+        local batch_json = json.tostring(citations)
+        local c_str = lib.citum_render_citations_json(proc.ptr, batch_json, format)
+        if c_str then
+            results.citations = json.tolua(to_lua_string(c_str))
+        end
+        results.bibliography = proc:render_bibliography()
+    end
+
+    -- Compare with current cache to see if we need another rerun
+    local changed = false
+    if #results.citations ~= #(CITUM.cached_results.citations or {}) then
+        changed = true
+    else
+        for i, v in ipairs(results.citations) do
+            if v ~= CITUM.cached_results.citations[i] then
+                changed = true
+                break
+            end
+        end
+    end
+    if not changed and results.bibliography ~= CITUM.cached_results.bibliography then
+        changed = true
+    end
+
+    CITUM.save_cache(results)
+
+    if changed then
+        tex.print("\\PackageWarningNoLine{citum}{Citation(s) may have changed. Rerun to get cross-references right}")
+    end
+end
+
 --- Infer a Citum locator label and value from a raw biblatex optional-arg string.
 function CITUM.parse_locator(s)
     if not s or s == "" then return nil, nil end
@@ -303,17 +438,20 @@ function CITUM.parse_locator(s)
 end
 
 -- Helper for the LaTeX package
-function CITUM.do_cite(proc, cite_opts)
-    if not proc then
-        tex.sprint("[citum: processor not initialised]")
-        return
-    end
-    local ok, res = pcall(function() return proc:render_citation(cite_opts) end)
-    if ok then
-        tex.sprint(res)
+function CITUM.record_cite(cite_opts)
+    table.insert(CITUM.document_citations, cite_opts)
+    CITUM.citation_index = CITUM.citation_index + 1
+    
+    local rendered = CITUM.cached_results.citations[CITUM.citation_index]
+    if rendered then
+        tex.sprint(rendered)
     else
-        tex.sprint("[citum: render error: " .. tostring(res) .. "]")
+        tex.sprint("\\textbf{[?]}")
     end
+end
+
+function CITUM.do_cite(cite_opts)
+    CITUM.record_cite(cite_opts)
 end
 
 function CITUM.split_keys(s)
@@ -336,43 +474,56 @@ function CITUM.cites_add(raw_loc, key)
     table.insert(CITUM.cites_items, item)
 end
 
-function CITUM.cites_flush(proc)
-    CITUM.do_cite(proc, { items = CITUM.cites_items })
+function CITUM.cites_flush(_proc)
+    CITUM.record_cite({ items = CITUM.cites_items })
 end
 
-function CITUM.cites_flush_integral(proc)
-    CITUM.do_cite(proc, { mode = "integral", items = CITUM.cites_items })
+function CITUM.cites_flush_integral(_proc)
+    CITUM.record_cite({ mode = "integral", items = CITUM.cites_items })
 end
 
-function CITUM.cite_single(proc, raw_loc, key)
+function CITUM.cite_single(_proc, raw_loc, key)
     local label, locator = CITUM.parse_locator(raw_loc)
     local item = { id = key, label = label, locator = locator }
-    CITUM.do_cite(proc, { items = { item } })
+    CITUM.record_cite({ items = { item } })
 end
 
-function CITUM.textcite_single(proc, raw_loc, key)
+function CITUM.textcite_single(_proc, raw_loc, key)
     local label, locator = CITUM.parse_locator(raw_loc)
     local item = { id = key, label = label, locator = locator }
-    CITUM.do_cite(proc, { mode = "integral", items = { item } })
+    CITUM.record_cite({ mode = "integral", items = { item } })
 end
 
-function CITUM.cite_keys(proc, keys_str)
+function CITUM.cite_keys(_proc, keys_str)
     local items = {}
     for _, k in ipairs(CITUM.split_keys(keys_str)) do
         table.insert(items, { id = k })
     end
-    CITUM.do_cite(proc, { items = items })
+    CITUM.record_cite({ items = items })
 end
 
-function CITUM.textcite_keys(proc, keys_str)
+function CITUM.textcite_keys(_proc, keys_str)
     local items = {}
     for _, k in ipairs(CITUM.split_keys(keys_str)) do
         table.insert(items, { id = k })
     end
-    CITUM.do_cite(proc, { mode = "integral", items = items })
+    CITUM.record_cite({ mode = "integral", items = items })
 end
 
-function CITUM.init_processor(style_opt, bibfile, locale_opt)
+function CITUM.init_processor(style_opt, bibfile, locale_opt, jobname, rpc)
+    CITUM.config.rpc = rpc
+    CITUM.load_cache(jobname)
+
+    if rpc then
+        -- In RPC mode, we don't need a local processor object
+        return { dummy = true }
+    end
+
+    if not lib then
+        error("citum: FFI library not loaded and RPC mode not enabled. "
+          .. "Check CITUM_LIB_PATH or use rpc=true.")
+    end
+
     if bibfile:match("%.bib$") then
         error("citum: biblatex .bib input is not supported via the C FFI. "
           .. "Convert '" .. bibfile .. "' to Citum YAML bib format.")
@@ -391,16 +542,12 @@ function CITUM.init_processor(style_opt, bibfile, locale_opt)
     return proc
 end
 
-function CITUM.print_bibliography(proc)
-    if not proc then
-        tex.sprint("[citum: processor not initialised]")
-        return
-    end
-    local ok, res = pcall(function() return proc:render_bibliography() end)
-    if ok then
-        tex.sprint(res)
+function CITUM.print_bibliography(_proc)
+    local bib = CITUM.cached_results.bibliography
+    if bib and bib ~= "" then
+        tex.sprint(bib)
     else
-        tex.sprint("[citum: bibliography render error: " .. tostring(res) .. "]")
+        tex.sprint("\\PackageWarning{citum}{Bibliography not yet rendered. Rerun LaTeX.}")
     end
 end
 
