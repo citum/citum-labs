@@ -13,7 +13,7 @@ This directory contains the `citum.sty` package, which brings the Citum citation
 - `style`: Path to a Citum YAML style (e.g., `apa-7th`).
 - `bibfile`: Path to a Citum YAML bibliography (e.g., `refs.yaml`).
 - `locale`: Optional BCP 47 locale (e.g., `en-US`).
-- `rpc`: Boolean (default `false`). If `true`, uses a remote Citum server instead of the local shared library.
+- `rpc`: Boolean (default `false`, but automatically enabled if the Rust library is missing). If `true`, forces the use of a remote Citum server.
 
 ## RPC Mode (Automatic Fallback)
 

@@ -71,8 +71,14 @@
   end
 
   if citum_module then
-    local style_path = kpse.find_file("\citum@style", "tex") or "\citum@style"
-    local bib_path   = kpse.find_file("\citum@bibfile", "tex") or "\citum@bibfile"
+    local function resolve_file(name, ext)
+      local f = kpse.find_file(name)
+      if f then return f end
+      return kpse.find_file(name .. ext) or name
+    end
+    local style_path = resolve_file("\citum@style", ".yaml")
+    local bib_path   = resolve_file("\citum@bibfile", ".yaml")
+
     citum_proc = citum_module.init_processor(
       style_path, bib_path, "\citum@locale", "\jobname", \ifcitum@rpc true \else false \fi
     )
@@ -126,11 +132,19 @@
 \newcommand{\citumsetup}[1]{%
   \setkeys{citum}{#1}%
   \directlua{
-    local style_path = kpse.find_file("\citum@style", "tex") or "\citum@style"
-    local bib_path   = kpse.find_file("\citum@bibfile", "tex") or "\citum@bibfile"
+    local function resolve_file(name, ext)
+      local f = kpse.find_file(name)
+      if f then return f end
+      return kpse.find_file(name .. ext) or name
+    end
+    local style_path = resolve_file("\citum@style", ".yaml")
+    local bib_path   = resolve_file("\citum@bibfile", ".yaml")
     citum_proc = citum_module.init_processor(
       style_path, bib_path, "\citum@locale", "\jobname", \ifcitum@rpc true \else false \fi
     )
+    at_end_document_hook = function()
+      citum_module.process_document(citum_proc, style_path, bib_path, "\citum@locale")
+    end
   }%
 }
 

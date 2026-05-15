@@ -10,7 +10,27 @@ CITUM.cached_results = { citations = {}, bibliography = "" }
 CITUM.citation_index = 0
 CITUM.config = { rpc = false, rpc_url = "http://localhost:9000", jobname = "texput" }
 
-local json = require("utilities.json")
+local json
+do
+    local ok, res = pcall(require, "utilities.json")
+    if ok and res then
+        json = res
+    else
+        ok, res = pcall(require, "citum_json")
+        if ok and res then
+            json = res
+        else
+            ok, res = pcall(require, "json")
+            if ok and res then
+                json = res
+            end
+        end
+    end
+end
+
+if not json then
+    error("citum: JSON module not found. Please ensure citum_json.lua is installed or lualibs is available.")
+end
 
 local ffi_ok, ffi = pcall(require, "ffi")
 local lib = nil
@@ -320,8 +340,12 @@ function CITUM.save_cache(data)
 end
 
 local function http_post(url, payload)
-    local http = require("socket.http")
-    local ltn12 = require("ltn12")
+    local ok_http, http = pcall(require, "socket.http")
+    local ok_ltn12, ltn12 = pcall(require, "ltn12")
+
+    if not ok_http or not ok_ltn12 then
+        return nil, "luasocket (socket.http or ltn12) not found. RPC mode disabled."
+    end
 
     local response_body = {}
     local res, code, response_headers = http.request{
@@ -329,7 +353,7 @@ local function http_post(url, payload)
         method = "POST",
         headers = {
             ["Content-Type"] = "application/json",
-            ["Content-Length"] = #payload
+            ["Content-Length"] = tostring(#payload)
         },
         source = ltn12.source.string(payload),
         sink = ltn12.sink.table(response_body)
@@ -360,7 +384,7 @@ function CITUM.process_document(proc, style_path, bib_path, locale)
             method = "format_document",
             params = {
                 style = { kind = "yaml", value = style_str },
-                refs = bib_str, -- Assuming server accepts YAML string for refs
+                refs = { kind = "yaml", value = bib_str },
                 locale = locale,
                 output_format = format,
                 citations = citations
@@ -368,16 +392,16 @@ function CITUM.process_document(proc, style_path, bib_path, locale)
             id = 1
         }
         
-        local ok, payload = pcall(json.tostring, request)
+        local ok, payload = pcall(json.tostring or json.encode, request)
         if not ok then error("citum: failed to encode RPC request: " .. tostring(payload)) end
         
         local response, err = http_post(CITUM.config.rpc_url, payload)
         if not response then
-            tex.print("\\PackageWarning{citum}{RPC error: " .. err .. "}")
+            texio.write_nl("Package citum Warning: RPC error: " .. tostring(err))
             return
         end
         
-        local ok2, data = pcall(json.tolua, response)
+        local ok2, data = pcall(json.tolua or json.decode, response)
         if not ok2 or not data or not data.result then
             error("citum: failed to parse RPC response: " .. tostring(data))
         end

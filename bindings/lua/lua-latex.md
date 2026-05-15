@@ -70,7 +70,7 @@ The bibliography format is selected automatically by file extension:
 | `style` | Path to a Citum YAML style file (extension optional) |
 | `bibfile` | Path to a bibliography file (.yaml or .bib) |
 | `locale` | Optional locale name (e.g., `en-GB`, `fr-FR`) |
-| `rpc` | Use `citum-server` via RPC instead of FFI (default: `false`) |
+| `rpc` | Force `citum-server` via RPC (default: auto-fallback if FFI missing) |
 
 ### Citation commands
 
