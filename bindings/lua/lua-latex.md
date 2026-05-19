@@ -1,52 +1,55 @@
 # Citum LuaLaTeX Integration
 
-The Citum processor can be used directly inside LuaLaTeX documents via a
-LuaJIT FFI binding to the Rust shared library. No Biber, no `.bbl` file,
-and no shell-escape are required — citations and bibliography are rendered in
-a single `lualatex` pass.
+The Citum processor can be used directly inside LuaLaTeX documents via two
+different backends: a fast LuaJIT FFI binding to the Rust shared library,
+or a network-based RPC fallback to a standalone `citum-server`.
 
 ## Architecture
 
 ```
 .tex  \cite{key}
-  └─► \directlua  ──► citum.lua (LuaJIT FFI)  ──► libcitum_processor (Rust)
-                                                         │
-                         tex.sprint(rendered) ◄──────────┘
+  └─► \directlua  ──► citum.lua (Record key)
+                               │
+            Pass 1: Cache list of all citations
+            Pass 2: Load results from .citum.json ──► tex.sprint
+                               │
+    \AtEndDocument ──► Process Document ──► [FFI or RPC Backend]
+                                                      │
+                         Save results to .citum.json ◄┘
 ```
 
-1. **Core logic (Rust)** — all citation rules, disambiguation, locale terms,
-   and formatting live in the Citum engine.
-2. **C FFI layer** — thin `#[no_mangle]` exports in `crates/citum-engine/src/ffi.rs`.
-3. **Lua binding** — `bindings/lua/citum.lua` wraps the FFI and provides a
-   clean Lua API including a helper for the full Citum citation model.
-4. **LaTeX package** — `bindings/latex/citum.sty` wires the Lua API into
-   standard LaTeX citation commands.
+1. **Stateful Tracking** — Citum now uses a **multi-pass workflow** (like BibTeX or Biber). Lua collects all citations during the first pass and processes them in a single batch at the end of the run.
+2. **Backends**:
+   - **FFI**: Direct in-process call to `libcitum_processor`. Highest performance.
+   - **RPC**: HTTP/JSON-RPC call to `citum-server`. Recommended for distribution where Rust binaries cannot be bundled (e.g., official TeX Live packages).
+3. **Cache** — Results are stored in `\jobname.citum.json`. If citations change, LaTeX emits a warning to rerun the document.
 
 ---
 
 ## Quick start
 
-### 1 — Build the shared library
+### Method A: Local Shared Library (FFI)
 
-```bash
-cargo build --package citum_engine --release --features ffi
-```
+1. **Build the shared library**:
+   ```bash
+   cargo build --package citum_engine --release --features ffi
+   ```
+2. **Make it findable**: Set `CITUM_LIB_PATH` to the absolute path of the `.dylib`/`.so`.
+3. **Compile**: `lualatex citum-example.tex`
 
-This produces:
-- `target/release/libcitum_processor.dylib` (macOS)
-- `target/release/libcitum_processor.so` (Linux)
-- `target/release/citum_engine.dll` (Windows)
+### Method B: Citum Server (RPC)
 
-### 2 — Make the library findable
+1. **Run the server**:
+   ```bash
+   citum-server --port 9000
+   ```
+2. **Configure LaTeX**:
+   ```latex
+   \usepackage[style=..., bibfile=...]{citum}
+   ```
+   If the shared library is not found, Citum **automatically falls back to RPC mode**. You can also force it with the `rpc` option if the library is present but you prefer the server.
 
-Either set `CITUM_LIB_PATH` to the absolute path of the `.dylib`/`.so`, or
-copy / symlink it into your document directory.
-
-### 3 — Compile your document
-
-```bash
-lualatex citum-example.tex
-```
+3. **Compile twice**: `lualatex doc.tex` (Pass 1), then `lualatex doc.tex` (Pass 2).
 
 ---
 
@@ -67,6 +70,7 @@ The bibliography format is selected automatically by file extension:
 | `style` | Path to a Citum YAML style file (extension optional) |
 | `bibfile` | Path to a bibliography file (.yaml or .bib) |
 | `locale` | Optional locale name (e.g., `en-GB`, `fr-FR`) |
+| `rpc` | Force `citum-server` via RPC (default: auto-fallback if FFI missing) |
 
 ### Citation commands
 

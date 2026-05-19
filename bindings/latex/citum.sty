@@ -18,6 +18,7 @@
 \DeclareStringOption[apa-7th]{style}
 \DeclareStringOption{bibfile}
 \DeclareStringOption{locale}
+\DeclareBoolOption{rpc}
 \ProcessKeyvalOptions*
 
 \ifcsvoid{citum@bibfile}{
@@ -70,11 +71,25 @@
   end
 
   if citum_module then
+    local function resolve_file(name, ext)
+      local f = kpse.find_file(name)
+      if f then return f end
+      return kpse.find_file(name .. ext) or name
+    end
+    local style_path = resolve_file("\citum@style", ".yaml")
+    local bib_path   = resolve_file("\citum@bibfile", ".yaml")
+
     citum_proc = citum_module.init_processor(
-      "\citum@style", "\citum@bibfile", "\citum@locale"
+      style_path, bib_path, "\citum@locale", "\jobname", \ifcitum@rpc true \else false \fi
     )
+    
+    at_end_document_hook = function()
+      citum_module.process_document(citum_proc, style_path, bib_path, "\citum@locale")
+    end
   end
 }
+
+\AtEndDocument{\directlua{at_end_document_hook()}}
 
 % parse_locator, do_cite, cite_single, etc. are all in citum.lua.
 
@@ -116,8 +131,21 @@
 % Switch style or bib file at runtime
 \newcommand{\citumsetup}[1]{%
   \setkeys{citum}{#1}%
-  \directlua{citum_proc = citum_module.init_processor(
-    "\citum@style", "\citum@bibfile", "\citum@locale")}%
+  \directlua{
+    local function resolve_file(name, ext)
+      local f = kpse.find_file(name)
+      if f then return f end
+      return kpse.find_file(name .. ext) or name
+    end
+    local style_path = resolve_file("\citum@style", ".yaml")
+    local bib_path   = resolve_file("\citum@bibfile", ".yaml")
+    citum_proc = citum_module.init_processor(
+      style_path, bib_path, "\citum@locale", "\jobname", \ifcitum@rpc true \else false \fi
+    )
+    at_end_document_hook = function()
+      citum_module.process_document(citum_proc, style_path, bib_path, "\citum@locale")
+    end
+  }%
 }
 
 \newcommand{\printcitumbibliography}{%
