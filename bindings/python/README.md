@@ -11,12 +11,12 @@ You must have the Citum shared library (`libcitum_processor`) built and availabl
 From the core Citum repository:
 
 ```bash
-cargo build --package citum_engine --release --features ffi
+cargo build --package citum-engine --release --features ffi
 ```
 
 This will produce:
-- `libcitum_processor.dylib` (macOS)
-- `libcitum_processor.so` (Linux)
+- `libcitum_engine.dylib` (macOS)
+- `libcitum_engine.so` (Linux)
 - `citum_engine.dll` (Windows)
 
 ## Installation

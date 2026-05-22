@@ -28,11 +28,11 @@ class CitumProcessor:
         import platform
         system = platform.system()
         if system == "Darwin":
-            name = "libcitum_processor.dylib"
+            name = "libcitum_engine.dylib"
         elif system == "Windows":
             name = "citum_engine.dll"
         else:
-            name = "libcitum_processor.so"
+            name = "libcitum_engine.so"
 
         # Try current directory first, then system paths
         try:
