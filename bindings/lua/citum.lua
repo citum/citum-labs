@@ -1,5 +1,22 @@
 -- Citum LuaJIT Binding
 -- This module provides a high-level Lua interface to the Citum Rust processor.
+--
+-- Design note: this binding is an experimental project whose primary purpose is
+-- testing the citum-core API, its C FFI surface, and the citum-server RPC protocol.
+-- It is not intended for production use. Two transport backends are provided:
+--
+--   FFI  — loads libcitum_engine directly via LuaJIT FFI. Fast for local
+--   development, but unsuitable for distribution in environments like TeXLive,
+--   which prohibit loading external shared libraries for security and policy
+--   reasons. (Zeping Lee's TeXLive inquiry on the TUG list, March 2026, and
+--   Karl Berry's reply, prompted the addition of the RPC mode.)
+--
+--   Pipe/RPC — spawns citum-server as a subprocess communicating over
+--   stdin/stdout using JSON-RPC 2.0. This is the only viable path for broad
+--   distribution such as TeXLive.
+--
+-- If this ever develops into a production LaTeX package, the FFI transport should
+-- be removed in favour of the pipe/RPC mode.
 
 local CITUM = {}
 CITUM.__index = CITUM
@@ -8,7 +25,7 @@ CITUM.__index = CITUM
 CITUM.document_citations = {}
 CITUM.cached_results = { citations = {}, bibliography = "" }
 CITUM.citation_index = 0
-CITUM.config = { rpc = false, rpc_url = "http://localhost:9000", jobname = "texput" }
+CITUM.config = { transport = "ffi", server_path = nil, jobname = "texput" }
 
 local json
 do
@@ -29,7 +46,83 @@ do
 end
 
 if not json then
-    error("citum: JSON module not found. Please ensure citum_json.lua is installed or lualibs is available.")
+    -- Minimal fallback: encode + decode sufficient for citation data
+    local J = {}
+    local function enc(v)
+        local t = type(v)
+        if t == "nil"     then return "null" end
+        if t == "boolean" then return tostring(v) end
+        if t == "number"  then return tostring(v) end
+        if t == "string"  then
+            local escapes = { ['\\']='\\\\', ['"']='\\"', ['\n']='\\n',
+                              ['\r']='\\r', ['\t']='\\t' }
+            return '"' .. v:gsub('[\\"\n\r\t]', escapes) .. '"'
+        end
+        if t == "table" then
+            if #v > 0 then
+                local a = {}
+                for _, x in ipairs(v) do a[#a+1] = enc(x) end
+                return "[" .. table.concat(a, ",") .. "]"
+            end
+            local o = {}
+            for k, x in pairs(v) do o[#o+1] = '"' .. k .. '":' .. enc(x) end
+            return "{" .. table.concat(o, ",") .. "}"
+        end
+        return "null"
+    end
+    local function dec(s, i)
+        i = s:find("[^ \t\n\r]", i or 1)
+        if not i then return nil, (#s + 1) end
+        local c = s:sub(i, i)
+        if c == '"' then
+            local j, parts = i + 1, {}
+            while j <= #s do
+                local ch = s:sub(j, j)
+                if ch == '"' then return table.concat(parts), j + 1
+                elseif ch == '\\' then
+                    local esc_ch = s:sub(j+1,j+1)
+                    local m = {['"']='"',['\\']='\\',['/']=  '/',
+                               b=string.char(8),f=string.char(12),
+                               n='\n',r='\r',t='\t'}
+                    parts[#parts+1] = m[esc_ch] or esc_ch
+                    j = j + 2
+                else parts[#parts+1] = ch ; j = j + 1 end
+            end
+        elseif c == '[' then
+            local arr, ni = {}, i + 1
+            ni = s:find("[^ \t\n\r]", ni)
+            if s:sub(ni,ni) == ']' then return arr, ni+1 end
+            repeat
+                local v; v, ni = dec(s, ni) ; arr[#arr+1] = v
+                ni = s:find("[^ \t\n\r]", ni)
+                if s:sub(ni,ni) == ']' then return arr, ni+1 end
+                ni = ni + 1
+            until false
+        elseif c == '{' then
+            local obj, ni = {}, i + 1
+            ni = s:find("[^ \t\n\r]", ni)
+            if s:sub(ni,ni) == '}' then return obj, ni+1 end
+            repeat
+                local k; k, ni = dec(s, ni)
+                ni = (s:find(":", ni) or ni) + 1
+                local v; v, ni = dec(s, ni) ; obj[k] = v
+                ni = s:find("[^ \t\n\r]", ni)
+                if s:sub(ni,ni) == '}' then return obj, ni+1 end
+                ni = ni + 1
+            until false
+        elseif s:sub(i,i+3) == "true"  then return true,  i+4
+        elseif s:sub(i,i+4) == "false" then return false, i+5
+        elseif s:sub(i,i+3) == "null"  then return nil,   i+4
+        else
+            local num = s:match("^-?%d+%.?%d*[eE]?[+-]?%d*", i)
+            if num then return tonumber(num), i + #num end
+            error("citum json: unexpected token at " .. i)
+        end
+    end
+    J.tostring = enc ; J.encode = enc
+    J.tolua    = function(s) return (dec(s)) end
+    J.decode   = function(s) return (dec(s)) end
+    json = J
 end
 
 local ffi_ok, ffi = pcall(require, "ffi")
@@ -78,9 +171,9 @@ if ffi_ok then
         if ffi.os == "OSX" then os_name = "OSX" end
         if ffi.os == "Windows" then os_name = "Windows" end
 
-        if os_name == "OSX"     then return "libcitum_processor.dylib" end
+        if os_name == "OSX"     then return "libcitum_engine.dylib" end
         if os_name == "Windows" then return "citum_engine.dll" end
-        return "libcitum_processor.so"
+        return "libcitum_engine.so"
     end
 
     local function load_lib()
@@ -103,8 +196,16 @@ if ffi_ok then
     lib = load_lib()
 end
 
+local function is_null_ptr(p)
+    if p == nil then return true end
+    if ffi_ok and ffi then
+        return tonumber(ffi.cast("uintptr_t", p)) == 0
+    end
+    return false
+end
+
 local function to_lua_string(c_str)
-    if not lib or c_str == nil then return nil end
+    if not lib or is_null_ptr(c_str) then return nil end
     local s = ffi.string(c_str)
     lib.citum_string_free(c_str)
     return s
@@ -134,7 +235,7 @@ end
 function CITUM.new(style_json, bib_json)
     local self = setmetatable({}, CITUM)
     self.ptr = lib.citum_processor_new(style_json, bib_json)
-    if self.ptr == nil then
+    if is_null_ptr(self.ptr) then
         return nil, "Failed to initialise Citum processor: " .. (CITUM.get_last_error() or "unknown error")
     end
     ffi.gc(self.ptr, lib.citum_processor_free)
@@ -145,7 +246,7 @@ end
 function CITUM.new_with_locale(style_json, bib_json, locale_json)
     local self = setmetatable({}, CITUM)
     self.ptr = lib.citum_processor_new_with_locale(style_json, bib_json, locale_json)
-    if self.ptr == nil then
+    if is_null_ptr(self.ptr) then
         return nil, "Failed to initialise Citum processor with locale: " .. (CITUM.get_last_error() or "unknown error")
     end
     ffi.gc(self.ptr, lib.citum_processor_free)
@@ -158,7 +259,7 @@ function CITUM.from_yaml(style_path, bib_path)
     local style_str = read_file(style_path)
     local bib_str   = read_file(bib_path)
     local ptr = lib.citum_processor_new_from_yaml(style_str, bib_str)
-    if ptr == nil then
+    if is_null_ptr(ptr) then
         return nil, "Failed to initialise Citum processor from YAML files: "
           .. style_path .. ", " .. bib_path .. " (" .. (CITUM.get_last_error() or "unknown error") .. ")"
     end
@@ -186,7 +287,7 @@ function CITUM.from_yaml_with_locale(style_path, bib_path, locale)
         locale_str = "locale: " .. locale
     end
     local ptr = lib.citum_processor_new_with_locale_from_yaml(style_str, bib_str, locale_str)
-    if ptr == nil then
+    if is_null_ptr(ptr) then
         return nil, "Failed to initialise Citum processor with locale: "
           .. (CITUM.get_last_error() or "unknown error")
     end
@@ -211,26 +312,32 @@ function CITUM:free()
     end
 end
 
+local function json_escape(s)
+    local esc = { ['\\'] = '\\\\', ['"'] = '\\"', ['\n'] = '\\n', ['\r'] = '\\r', ['\t'] = '\\t' }
+    return s:gsub('[\\"\n\r\t]', esc)
+end
+
 local function generate_cite_json(opts)
     if type(opts) == "string" then
-        return '{"items":[{"id":"' .. opts .. '"}]}'
+        return '{"items":[{"id":"' .. json_escape(opts) .. '"}]}'
     end
 
-    -- Simple JSON serialisation for common fields
     local items = {}
     for _, item in ipairs(opts.items or {}) do
-        local parts = {'"id":"' .. item.id .. '"'}
-        if item.label then table.insert(parts, '"label":"' .. item.label .. '"') end
-        if item.locator then table.insert(parts, '"locator":"' .. item.locator .. '"') end
-        if item.prefix then table.insert(parts, '"prefix":"' .. item.prefix .. '"') end
-        if item.suffix then table.insert(parts, '"suffix":"' .. item.suffix .. '"') end
+        local parts = {'"id":"' .. json_escape(item.id) .. '"'}
+        if item.locator then
+            local lbl = json_escape(item.label or "page")
+            parts[#parts+1] = '"locator":{"label":"' .. lbl .. '","value":"' .. json_escape(item.locator) .. '"}'
+        end
+        if item.prefix then parts[#parts+1] = '"prefix":"' .. json_escape(item.prefix) .. '"' end
+        if item.suffix then parts[#parts+1] = '"suffix":"' .. json_escape(item.suffix) .. '"' end
         table.insert(items, "{" .. table.concat(parts, ",") .. "}")
     end
 
     local root = {'"items":[' .. table.concat(items, ",") .. ']'}
-    if opts.mode then table.insert(root, '"mode":"' .. opts.mode .. '"') end
-    if opts.prefix then table.insert(root, '"prefix":"' .. opts.prefix .. '"') end
-    if opts.suffix then table.insert(root, '"suffix":"' .. opts.suffix .. '"') end
+    if opts.mode then table.insert(root, '"mode":"' .. json_escape(opts.mode) .. '"') end
+    if opts.prefix then table.insert(root, '"prefix":"' .. json_escape(opts.prefix) .. '"') end
+    if opts.suffix then table.insert(root, '"suffix":"' .. json_escape(opts.suffix) .. '"') end
 
     return "{" .. table.concat(root, ",") .. "}"
 end
@@ -339,34 +446,44 @@ function CITUM.save_cache(data)
     end
 end
 
-local function http_post(url, payload)
-    local ok_http, http = pcall(require, "socket.http")
-    local ok_ltn12, ltn12 = pcall(require, "ltn12")
-
-    if not ok_http or not ok_ltn12 then
-        return nil, "luasocket (socket.http or ltn12) not found. RPC mode disabled."
+-- Pipe/RPC transport helpers.
+-- See the design note at the top of this file for background on why this mode
+-- exists (TeXLive policy, Zeping Lee's TUG list inquiry, Karl Berry's reply).
+-- tug.org/pipermail/tex-live/2026-March/052253.html
+local function find_server_binary()
+    local explicit = CITUM.config.server_path or os.getenv("CITUM_SERVER_PATH")
+    if explicit and explicit ~= "" then return explicit end
+    -- os.execute returns boolean true (Lua 5.2+) or integer 0 (Lua 5.1/LuaJIT) on success.
+    local ok = os.execute("citum-server --version >/dev/null 2>&1")
+    if ok == true or ok == 0 then
+        return "citum-server"
     end
+    return nil
+end
 
-    local response_body = {}
-    local res, code, response_headers = http.request{
-        url = url,
-        method = "POST",
-        headers = {
-            ["Content-Type"] = "application/json",
-            ["Content-Length"] = tostring(#payload)
-        },
-        source = ltn12.source.string(payload),
-        sink = ltn12.sink.table(response_body)
-    }
-
-    if not res then
-        return nil, "HTTP request failed: " .. tostring(code)
+local function pipe_request(server_path, payload)
+    local tmpfile = os.tmpname()
+    local f = io.open(tmpfile, "w")
+    if not f then return nil, "citum: cannot create temp file for pipe transport" end
+    f:write(payload)
+    f:write("\n")
+    f:close()
+    -- Quote server_path to guard against spaces/special chars in the path.
+    -- Note: 2>/dev/null is POSIX-only; Windows is not supported by this transport.
+    local quoted = '"' .. server_path:gsub('"', '\\"') .. '"'
+    local cmd = string.format('%s < "%s" 2>/dev/null', quoted, tmpfile)
+    local pipe = io.popen(cmd, "r")
+    if not pipe then
+        os.remove(tmpfile)
+        return nil, "citum: failed to spawn citum-server"
     end
-    if code ~= 200 then
-        return nil, "Server returned error " .. code .. ": " .. table.concat(response_body)
+    local response = pipe:read("*l")
+    pipe:close()
+    os.remove(tmpfile)
+    if not response or response == "" then
+        return nil, "citum: citum-server returned no output"
     end
-
-    return table.concat(response_body)
+    return response
 end
 
 function CITUM.process_document(proc, style_path, bib_path, locale)
@@ -374,47 +491,52 @@ function CITUM.process_document(proc, style_path, bib_path, locale)
     local format = "latex"
     local results = { citations = {}, bibliography = "" }
 
-    if CITUM.config.rpc then
-        local style_str = read_file(style_path)
-        local bib_str = read_file(bib_path)
-        
-        -- Build JSON-RPC request
-        local request = {
-            jsonrpc = "2.0",
-            method = "format_document",
-            params = {
-                style = { kind = "yaml", value = style_str },
-                refs = { kind = "yaml", value = bib_str },
-                locale = locale,
-                output_format = format,
-                citations = citations
-            },
-            id = 1
+    if CITUM.config.transport == "pipe" then
+        local citation_occs = {}
+        for i, c in ipairs(citations) do
+            local occ = { id = "cite-" .. i, items = c.items }
+            if c.mode then occ.mode = c.mode end
+            table.insert(citation_occs, occ)
+        end
+        local params = {
+            style  = { kind = "path", value = style_path },
+            refs   = { kind = "path", value = bib_path },
+            output_format = format,
+            citations = citation_occs,
         }
-        
-        local ok, payload = pcall(json.tostring or json.encode, request)
-        if not ok then error("citum: failed to encode RPC request: " .. tostring(payload)) end
-        
-        local response, err = http_post(CITUM.config.rpc_url, payload)
+        if locale and locale ~= "" then params.locale = locale end
+        local request = { jsonrpc = "2.0", id = 1, method = "format_document", params = params }
+        local encode = json.tostring or json.encode
+        local ok, payload = pcall(encode, request)
+        if not ok then error("citum: failed to encode pipe request: " .. tostring(payload)) end
+        local response, err = pipe_request(CITUM.config.server_path, payload)
         if not response then
-            texio.write_nl("Package citum Warning: RPC error: " .. tostring(err))
+            texio.write_nl("Package citum Warning: pipe error: " .. tostring(err))
             return
         end
-        
-        local ok2, data = pcall(json.tolua or json.decode, response)
+        local decode = json.tolua or json.decode
+        local ok2, data = pcall(decode, response)
         if not ok2 or not data or not data.result then
-            error("citum: failed to parse RPC response: " .. tostring(data))
+            error("citum: failed to parse pipe response: " .. tostring(data))
         end
-        
-        results.citations = data.result.citations or {}
-        results.bibliography = data.result.bibliography or ""
+        local fc = data.result.formatted_citations or {}
+        for _, c in ipairs(fc) do
+            table.insert(results.citations, c.text or "")
+        end
+        local bib = data.result.bibliography
+        results.bibliography = (type(bib) == "table" and bib.content) or bib or ""
     else
         -- FFI Batch processing
         if not proc then return end
-        local batch_json = json.tostring(citations)
+        local batch_parts = {}
+        for _, c in ipairs(citations) do
+            table.insert(batch_parts, generate_cite_json(c))
+        end
+        local batch_json = "[" .. table.concat(batch_parts, ",") .. "]"
         local c_str = lib.citum_render_citations_json(proc.ptr, batch_json, format)
-        if c_str then
-            results.citations = json.tolua(to_lua_string(c_str))
+        local rendered_str = to_lua_string(c_str)
+        if rendered_str then
+            results.citations = json.tolua(rendered_str) or {}
         end
         results.bibliography = proc:render_bibliography()
     end
@@ -534,23 +656,27 @@ function CITUM.textcite_keys(_proc, keys_str)
     CITUM.record_cite({ mode = "integral", items = items })
 end
 
-function CITUM.init_processor(style_opt, bibfile, locale_opt, jobname, rpc_requested)
+function CITUM.init_processor(style_opt, bibfile, locale_opt, jobname, server_path_opt)
     CITUM.load_cache(jobname)
 
-    -- Determine backend: 
-    -- 1. Use RPC if explicitly requested via package option
-    -- 2. Use RPC if FFI library (lib) is not available
-    -- 3. Otherwise use FFI
-    if rpc_requested then
-        CITUM.config.rpc = true
-    elseif not lib then
-        CITUM.config.rpc = true
-    else
-        CITUM.config.rpc = false
+    if server_path_opt and server_path_opt ~= "" then
+        CITUM.config.server_path = server_path_opt
     end
 
-    if CITUM.config.rpc then
-        -- In RPC mode, we don't need a local processor object
+    if lib then
+        CITUM.config.transport = "ffi"
+    else
+        local server = find_server_binary()
+        if server then
+            CITUM.config.transport = "pipe"
+            CITUM.config.server_path = server
+        else
+            error("citum: no backend available. "
+                .. "Build libcitum_engine or install citum-server on PATH.")
+        end
+    end
+
+    if CITUM.config.transport == "pipe" then
         return { dummy = true }
     end
 
