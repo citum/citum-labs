@@ -25,18 +25,6 @@
   \PackageError{citum}{No bibfile specified. Use \usepackage[bibfile=...]{citum}}{}
 }{}
 
-% Path to a Citum YAML style file (without extension, resolved via kpse, or
-% absolute path).
-\def\citum@style{\citum@style}
-
-% Bibliography file: Citum YAML format only (.yaml/.yml).
-% Citum reads the file in Lua and passes the YAML string to the FFI
-% (citum_processor_new_from_yaml / citum_processor_new_with_locale_from_yaml).
-% Biblatex .bib input is not supported via the C FFI.
-\def\citum@bibfile{\citum@bibfile}
-
-% Optional locale name (e.g. en-US, fr-FR).
-\def\citum@locale{\citum@locale}
 
 \directlua{
   local function find_citum_lua()
