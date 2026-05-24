@@ -37,6 +37,8 @@
       if last_slash then
         local candidate = last_slash .. "citum.lua"
         if lfs.attributes(candidate) then return candidate end
+        local sibling = last_slash .. "../lua/citum.lua"
+        if lfs.attributes(sibling) then return sibling end
       end
     end
     
