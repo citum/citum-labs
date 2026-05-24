@@ -18,7 +18,7 @@
 \DeclareStringOption[apa-7th]{style}
 \DeclareStringOption{bibfile}
 \DeclareStringOption{locale}
-\DeclareBoolOption{rpc}
+\DeclareStringOption{server}
 \ProcessKeyvalOptions*
 
 \ifcsvoid{citum@bibfile}{
@@ -37,6 +37,8 @@
       if last_slash then
         local candidate = last_slash .. "citum.lua"
         if lfs.attributes(candidate) then return candidate end
+        local sibling = last_slash .. "../lua/citum.lua"
+        if lfs.attributes(sibling) then return sibling end
       end
     end
     
@@ -62,15 +64,21 @@
     local function resolve_file(name, ext)
       local f = kpse.find_file(name)
       if f then return f end
-      return kpse.find_file(name .. ext) or name
+      f = kpse.find_file(name .. ext)
+      if f then return f end
+      local fh = io.open(name .. ext, "r")
+      if fh then fh:close() ; return name .. ext end
+      fh = io.open(name, "r")
+      if fh then fh:close() ; return name end
+      return name .. ext
     end
     local style_path = resolve_file("\citum@style", ".yaml")
     local bib_path   = resolve_file("\citum@bibfile", ".yaml")
 
     citum_proc = citum_module.init_processor(
-      style_path, bib_path, "\citum@locale", "\jobname", \ifcitum@rpc true \else false \fi
+      style_path, bib_path, "\citum@locale", "\jobname", "\citum@server"
     )
-    
+
     at_end_document_hook = function()
       citum_module.process_document(citum_proc, style_path, bib_path, "\citum@locale")
     end
@@ -123,12 +131,18 @@
     local function resolve_file(name, ext)
       local f = kpse.find_file(name)
       if f then return f end
-      return kpse.find_file(name .. ext) or name
+      f = kpse.find_file(name .. ext)
+      if f then return f end
+      local fh = io.open(name .. ext, "r")
+      if fh then fh:close() ; return name .. ext end
+      fh = io.open(name, "r")
+      if fh then fh:close() ; return name end
+      return name .. ext
     end
     local style_path = resolve_file("\citum@style", ".yaml")
     local bib_path   = resolve_file("\citum@bibfile", ".yaml")
     citum_proc = citum_module.init_processor(
-      style_path, bib_path, "\citum@locale", "\jobname", \ifcitum@rpc true \else false \fi
+      style_path, bib_path, "\citum@locale", "\jobname", "\citum@server"
     )
     at_end_document_hook = function()
       citum_module.process_document(citum_proc, style_path, bib_path, "\citum@locale")
@@ -137,6 +151,7 @@
 }
 
 \newcommand{\printcitumbibliography}{%
+  \par\vspace{\baselineskip}%
   \directlua{citum_module.print_bibliography(citum_proc)}%
 }
 

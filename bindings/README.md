@@ -1,33 +1,47 @@
 # Citum Language Bindings
 
-This directory contains language-specific bindings and documentation for interfacing with the **Citum** citation processor from other environments.
+This directory contains language-specific bindings and documentation for
+interfacing with the **Citum** citation processor from other environments.
 
-## The C-FFI Strategy
+## Integration Strategies
 
-Citum is designed to be a high-performance, universal citation engine. To support languages like **Python, JavaScript (Node/Bun), Ruby, and Lua**, we provide a C-compatible Foreign Function Interface (FFI).
+There are two ways to call Citum from a non-Rust environment:
 
-### Why FFI?
-*   **Performance**: Avoid the overhead of re-implementing complex citation logic in interpreted languages.
-*   **Consistency**: Ensure the exact same rendering logic is used across a web app (Python/JS) and a document (LaTeX).
-*   **Single Source of Truth**: All citation rules, disambiguation, and locale logic reside in the Rust core.
+### A. C FFI (shared library)
 
-## Enabling FFI
-
-The FFI exports are feature-gated to maintain a safe, dependency-free core for Rust users. To build the shared library with FFI support:
+The FFI exports a C-compatible ABI from `libcitum_engine`. Build it with:
 
 ```bash
-cargo build --package citum_engine --release --features ffi
+cargo build --package citum-engine --release --features ffi
 ```
 
-This will produce:
-- `libcitum_processor.so` (Linux)
-- `libcitum_processor.dylib` (macOS)
+This produces:
+- `libcitum_engine.so` (Linux)
+- `libcitum_engine.dylib` (macOS)
 - `citum_engine.dll` (Windows)
+
+Best for environments where loading a native shared library is straightforward
+(LuaJIT, Python ctypes, Node napi).
+
+### B. Pipe transport (citum-server)
+
+`citum-server` speaks newline-delimited JSON-RPC over stdin/stdout. Build a
+stdio-only binary (no HTTP/async dependency) with:
+
+```bash
+cargo build --package citum-server --release --no-default-features
+```
+
+Best for **TeX Live distribution** and other contexts where packages may not
+include compiled shared libraries. The LuaLaTeX binding automatically uses pipe
+mode when `libcitum_engine` is not found and `citum-server` is available on
+`PATH` (or `CITUM_SERVER_PATH` is set). No configuration needed.
 
 ## For Developers
 
 ### Lua / LuaLaTeX
-See [bindings/lua/lua-latex.md](./lua/lua-latex.md) for detailed integration instructions using LuaJIT FFI.
+See [bindings/lua/lua-latex.md](./lua/lua-latex.md) for detailed integration
+instructions.
 
 ### Python
 Python developers can use `ctypes` or `cffi` to load the shared library.
@@ -65,4 +79,5 @@ The FFI exports the following C-compatible symbols:
 - `citum_get_last_error()`: Return the last error message (call after a null return).
 - `citum_string_free(s)`: Free any string returned by the FFI.
 
-See `crates/citum-engine/src/ffi/mod.rs` in the citum-core repository for the full C signatures.
+See `crates/citum-engine/src/ffi/mod.rs` in the citum-core repository for the
+full C signatures.

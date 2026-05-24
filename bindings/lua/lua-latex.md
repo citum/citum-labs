@@ -1,8 +1,9 @@
 # Citum LuaLaTeX Integration
 
 The Citum processor can be used directly inside LuaLaTeX documents via two
-different backends: a fast LuaJIT FFI binding to the Rust shared library,
-or a network-based RPC fallback to a standalone `citum-server`.
+backends: a fast LuaJIT FFI binding to `libcitum_engine`, or a pipe transport
+to a standalone `citum-server` binary. The binding selects automatically — no
+configuration required.
 
 ## Architecture
 
@@ -13,16 +14,20 @@ or a network-based RPC fallback to a standalone `citum-server`.
             Pass 1: Cache list of all citations
             Pass 2: Load results from .citum.json ──► tex.sprint
                                │
-    \AtEndDocument ──► Process Document ──► [FFI or RPC Backend]
+    \AtEndDocument ──► Process Document ──► [FFI or Pipe Backend]
                                                       │
                          Save results to .citum.json ◄┘
 ```
 
-1. **Stateful Tracking** — Citum now uses a **multi-pass workflow** (like BibTeX or Biber). Lua collects all citations during the first pass and processes them in a single batch at the end of the run.
-2. **Backends**:
-   - **FFI**: Direct in-process call to `libcitum_processor`. Highest performance.
-   - **RPC**: HTTP/JSON-RPC call to `citum-server`. Recommended for distribution where Rust binaries cannot be bundled (e.g., official TeX Live packages).
-3. **Cache** — Results are stored in `\jobname.citum.json`. If citations change, LaTeX emits a warning to rerun the document.
+1. **Stateful Tracking** — Multi-pass workflow (like BibTeX/Biber). Lua
+   collects all citations during the first pass and processes them in a single
+   batch at the end of the run.
+2. **Backends** (auto-selected):
+   - **FFI**: Direct in-process call to `libcitum_engine`. Highest performance.
+   - **Pipe**: Spawns `citum-server` and communicates via stdin/stdout
+     JSON-RPC. No shared library required — suitable for TeX Live distribution.
+3. **Cache** — Results are stored in `\jobname.citum.json`. If citations
+   change, LaTeX emits a warning to rerun the document.
 
 ---
 
@@ -32,45 +37,49 @@ or a network-based RPC fallback to a standalone `citum-server`.
 
 1. **Build the shared library**:
    ```bash
-   cargo build --package citum_engine --release --features ffi
+   cargo build --package citum-engine --release --features ffi
    ```
-2. **Make it findable**: Set `CITUM_LIB_PATH` to the absolute path of the `.dylib`/`.so`.
-3. **Compile**: `lualatex citum-example.tex`
+2. **Make it findable**: Set `CITUM_LIB_PATH` to the absolute path of
+   the `.dylib`/`.so`.
+3. **Compile**: `lualatex --shell-escape citum-example.tex`
 
-### Method B: Citum Server (RPC)
+### Method B: Pipe Transport (citum-server)
 
-1. **Run the server**:
+Designed for environments where a shared library cannot be distributed
+(e.g., TeX Live packages). The binding spawns `citum-server` automatically
+when `libcitum_engine` is not found.
+
+1. **Install the server** (stdio-only build, no HTTP/async):
    ```bash
-   citum-server --port 9000
+   cargo install citum-server --no-default-features
    ```
-2. **Configure LaTeX**:
-   ```latex
-   \usepackage[style=..., bibfile=...]{citum}
-   ```
-   If the shared library is not found, Citum **automatically falls back to RPC mode**. You can also force it with the `rpc` option if the library is present but you prefer the server.
+   Or set `CITUM_SERVER_PATH` to its absolute path, or pass
+   `server=/path/to/citum-server` as a package option.
 
-3. **Compile twice**: `lualatex doc.tex` (Pass 1), then `lualatex doc.tex` (Pass 2).
+2. **Compile** (requires `--shell-escape` for `io.popen`):
+   ```bash
+   lualatex --shell-escape doc.tex   # Pass 1
+   lualatex --shell-escape doc.tex   # Pass 2
+   ```
 
 ---
 
 ## LaTeX package (`citum.sty`)
 
 ```latex
-\usepackage[style=apa-7th, bibfile=refs]{citum}               % Citum YAML bib
-\usepackage[style=apa-7th, bibfile=refs.bib, locale=fr-FR]{citum} % with locale
+\usepackage[style=apa-7th, bibfile=refs]{citum}
+\usepackage[style=apa-7th, bibfile=refs, locale=fr-FR]{citum}
+\usepackage[style=apa-7th, bibfile=refs, server=/usr/local/bin/citum-server]{citum}
 ```
-
-The bibliography format is selected automatically by file extension:
-`.bib` → biblatex parser; anything else → Citum YAML parser.
 
 ### Package Options
 
 | Option | Description |
 |---|---|
 | `style` | Path to a Citum YAML style file (extension optional) |
-| `bibfile` | Path to a bibliography file (.yaml or .bib) |
-| `locale` | Optional locale name (e.g., `en-GB`, `fr-FR`) |
-| `rpc` | Force `citum-server` via RPC (default: auto-fallback if FFI missing) |
+| `bibfile` | Path to a Citum YAML bibliography file |
+| `locale` | Optional BCP 47 locale tag (e.g., `en-GB`, `fr-FR`) |
+| `server` | Explicit path to `citum-server` binary (optional; auto-detected from `CITUM_SERVER_PATH` or `PATH` if omitted) |
 
 ### Citation commands
 
