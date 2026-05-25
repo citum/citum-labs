@@ -141,20 +141,16 @@ have both contributed to this line of inquiry.
 \section{Bibliography}
 % -----------------------------------------------------------------------
 
-% Primary/secondary split is planned via categorized bibliography groups
-% (see docs/examples.html#bibliography-grouping in citum-core). Until then,
-% use section headings to organize the printed bibliography manually and
-% pass the full list to \printcitumbibliography.
+% Bibliography is split by entry type, mirroring the HTML demo:
+%   type=manuscript    → primary sources (harrington1891)
+%   not-type=manuscript → secondary sources (all others)
 
 \subsection*{Primary Sources}
 \addcontentsline{toc}{subsection}{Primary Sources}
+\printcitumbibliography[type=manuscript]
 
-% harrington1891 is the only primary source in this example.
-\printcitumbibliography
-
-% When grouped bibliography output is available, this will become:
-%   \printcitumbibliography[category=primary]
-%   ...
-%   \printcitumbibliography[category=secondary]
+\subsection*{Secondary Sources}
+\addcontentsline{toc}{subsection}{Secondary Sources}
+\printcitumbibliography[not-type=manuscript]
 
 \end{document}

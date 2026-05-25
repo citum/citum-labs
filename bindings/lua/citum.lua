@@ -23,7 +23,7 @@ CITUM.__index = CITUM
 
 -- State for multi-pass LaTeX processing
 CITUM.document_citations = {}
-CITUM.cached_results = { citations = {}, bibliography = "" }
+CITUM.cached_results = { citations = {}, bibliography = "", bibliography_filtered = {} }
 CITUM.citation_index = 0
 CITUM.config = { transport = "ffi", server_path = nil, jobname = "texput" }
 
@@ -488,6 +488,39 @@ local function pipe_request(server_path, payload)
     return response
 end
 
+local function parse_bib_entry_list(bib_str)
+    local header_lines, entries = {}, {}
+    local current, current_type, in_entries = nil, nil, false
+    for line in (bib_str .. "\n"):gmatch("([^\n]*)\n") do
+        if line:match("^  %- id:") then
+            if current then
+                entries[#entries+1] = { text = current, type = current_type or "" }
+            end
+            current, current_type, in_entries = line .. "\n", nil, true
+        elseif in_entries then
+            local t = line:match("^%s+type:%s*(%S+)")
+            if t then current_type = t end
+            current = current .. line .. "\n"
+        else
+            header_lines[#header_lines+1] = line
+        end
+    end
+    if current then entries[#entries+1] = { text = current, type = current_type or "" } end
+    return table.concat(header_lines, "\n") .. "\n", entries
+end
+
+local function make_filtered_yaml(header, entries, filter_type, exclude)
+    local out = {}
+    for _, e in ipairs(entries) do
+        local match = (e.type == filter_type)
+        if (not exclude and match) or (exclude and not match) then
+            out[#out+1] = e.text
+        end
+    end
+    if #out == 0 then return nil end
+    return header .. table.concat(out)
+end
+
 function CITUM.process_document(proc, style_path, bib_path, locale)
     local citations = CITUM.document_citations
     local format = "latex"
@@ -552,6 +585,38 @@ function CITUM.process_document(proc, style_path, bib_path, locale)
             results.citations = json.tolua(rendered_str) or {}
         end
         results.bibliography = proc:render_bibliography()
+
+        -- Pre-render type-filtered bibliographies (FFI only)
+        local ok_bib, bib_file_str = pcall(read_file, bib_path)
+        if ok_bib then
+            local hdr, entry_list = parse_bib_entry_list(bib_file_str)
+            local types_seen = {}
+            for _, e in ipairs(entry_list) do
+                if e.type ~= "" then types_seen[e.type] = true end
+            end
+            if next(types_seen) then
+                local ok_sty, sty_str = pcall(read_file, style_path)
+                if ok_sty then
+                    local filtered = {}
+                    local function render_filtered(key, yaml_str)
+                        local ptr = lib.citum_processor_new_from_yaml(sty_str, yaml_str)
+                        if not is_null_ptr(ptr) then
+                            lib.citum_render_citations_json(ptr, batch_json, format)
+                            local s = to_lua_string(lib.citum_render_bibliography_latex(ptr))
+                            lib.citum_processor_free(ptr)
+                            if s then filtered[key] = s end
+                        end
+                    end
+                    for t in pairs(types_seen) do
+                        local y_inc = make_filtered_yaml(hdr, entry_list, t, false)
+                        if y_inc then render_filtered("type=" .. t, y_inc) end
+                        local y_exc = make_filtered_yaml(hdr, entry_list, t, true)
+                        if y_exc then render_filtered("not-type=" .. t, y_exc) end
+                    end
+                    results.bibliography_filtered = filtered
+                end
+            end
+        end
     end
 
     -- Compare with current cache to see if we need another rerun
@@ -711,8 +776,18 @@ function CITUM.init_processor(style_opt, bibfile, locale_opt, jobname, server_pa
     return proc
 end
 
-function CITUM.print_bibliography(_proc)
-    local bib = CITUM.cached_results.bibliography
+function CITUM.print_bibliography(_proc, opts_str)
+    local bib
+    if opts_str and opts_str ~= "" then
+        bib = (CITUM.cached_results.bibliography_filtered or {})[opts_str]
+        if not bib then
+            tex.sprint("\\PackageWarning{citum}{Filter '" .. opts_str
+                .. "' unavailable (pipe transport or rerun needed); using full bibliography.}")
+            bib = CITUM.cached_results.bibliography
+        end
+    else
+        bib = CITUM.cached_results.bibliography
+    end
     if bib and bib ~= "" then
         tex.sprint(bib)
     else
