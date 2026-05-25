@@ -9,13 +9,21 @@ export TEXINPUTS="$SCRIPT_DIR/..:${TEXINPUTS:-}"
 export CITUM_LUA_PATH="$SCRIPT_DIR/../../lua/citum.lua"
 
 if [ "${1:-}" = "--pipe" ]; then
-  # Pipe transport: build citum-server (stdio-only, no HTTP/tokio)
-  echo "building citum-server (stdio-only)…"
-  cargo build --manifest-path "$CORE_ROOT/Cargo.toml" \
-    -p citum-server --release --no-default-features
-  export CITUM_SERVER_PATH="$CORE_ROOT/target/release/citum-server"
+  # Pipe transport: look for citum-server on the PATH
+  if ! command -v citum-server &> /dev/null; then
+    echo "citum-server not found on PATH."
+    read -p "Would you like to install it now? [y/N] " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+      curl -fsSL https://github.com/citum/citum-core/releases/latest/download/install.sh | CITUM_COMPONENTS=citum-server sh
+    else
+      echo "error: citum-server is required for pipe transport." >&2
+      exit 1
+    fi
+  fi
+  export CITUM_SERVER_PATH="citum-server"
   unset CITUM_LIB_PATH || true
-  echo "server  : $CITUM_SERVER_PATH"
+  echo "server  : $(command -v citum-server)"
 else
   # FFI transport: locate libcitum_engine
   if [ -z "${CITUM_LIB_PATH:-}" ]; then
