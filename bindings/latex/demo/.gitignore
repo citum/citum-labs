@@ -3,3 +3,4 @@
 *.out
 *.pdf
 *.citum.json
+*.citum_pipe_tmp

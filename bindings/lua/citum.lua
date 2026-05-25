@@ -462,7 +462,9 @@ local function find_server_binary()
 end
 
 local function pipe_request(server_path, payload)
-    local tmpfile = os.tmpname()
+    -- os.tmpname() returns a /tmp/… path that LuaTeX's openout_any blocks.
+    -- Use a job-relative name so the write lands in the current directory.
+    local tmpfile = CITUM.config.jobname .. ".citum_pipe_tmp"
     local f = io.open(tmpfile, "w")
     if not f then return nil, "citum: cannot create temp file for pipe transport" end
     f:write(payload)
@@ -494,7 +496,18 @@ function CITUM.process_document(proc, style_path, bib_path, locale)
     if CITUM.config.transport == "pipe" then
         local citation_occs = {}
         for i, c in ipairs(citations) do
-            local occ = { id = "cite-" .. i, items = c.items }
+            local items = {}
+            for _, item in ipairs(c.items) do
+                local new_item = { id = item.id }
+                if item.locator then
+                    -- Server expects locator as {label, value}, not flat fields
+                    new_item.locator = { label = item.label or "page", value = item.locator }
+                end
+                if item.prefix then new_item.prefix = item.prefix end
+                if item.suffix then new_item.suffix = item.suffix end
+                table.insert(items, new_item)
+            end
+            local occ = { id = "cite-" .. i, items = items }
             if c.mode then occ.mode = c.mode end
             table.insert(citation_occs, occ)
         end
