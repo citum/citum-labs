@@ -150,9 +150,9 @@
   }%
 }
 
-\newcommand{\printcitumbibliography}{%
+\newcommand{\printcitumbibliography}[1][]{%
   \par\vspace{\baselineskip}%
-  \directlua{citum_module.print_bibliography(citum_proc)}%
+  \directlua{citum_module.print_bibliography(citum_proc, "\luaescapestring{#1}")}%
 }
 
 \providecommand{\printbibliography}{\printcitumbibliography}
