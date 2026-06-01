@@ -1,0 +1,51 @@
+#+title: Citum org-cite Demo
+#+author: Demo User
+#+date: 2026
+#+cite_export: citum
+#+bibliography: refs.bib
+
+* Introduction
+
+This document demonstrates the ~oc-citum~ export processor, which drives
+the Citum citation engine over a JSON-RPC pipe — no FFI required.
+
+** Default (parenthetical) style
+
+A standard parenthetical citation: [cite:@chen2017].
+
+Multiple references in one citation: [cite:@chen2017; @webb1968].
+
+A citation with a page locator: [cite:@chen2020 p. 42].
+
+** Integral (narrative) style
+
+Integral mode with ~[cite/t:]~:
+
+[cite/t:@chen2017] argued that collaborative knowledge-making restructures
+reference practices.
+
+Compare also [cite/t:@webb1968] on the institutional role of footnotes.
+
+** Author-suppressed style
+
+When only the year is needed in context — [cite/na:@chen2020] — the
+author name is suppressed.
+
+** Caps variant
+
+Sentence-opening citation with ~[cite//c:]~: [cite//c:@webb1968] remains
+the canonical study of the footnote as institution.
+
+** Nocite (bibliography-only)
+
+The following entry appears in the bibliography but not inline:
+[cite/n:@garcia2022].
+
+** A fuller note
+
+[cite/t:@tanaka2019 p. 51--56] analyse citation networks in
+Japanese-language scholarship, while [cite:@okafor2024] provides a
+large-scale computational perspective.
+
+* References
+#+print_bibliography:
