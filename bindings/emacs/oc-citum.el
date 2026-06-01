@@ -41,7 +41,7 @@
 
 ;;; Code:
 
-(require 'cl-lib)
+(require 'seq)
 (require 'subr-x)
 (require 'oc)
 (require 'org-element)
@@ -277,11 +277,11 @@ Returns a plist with :citations-alist (id . text) and :bibliography."
              (backend-sym (when backend (org-export-backend-name backend)))
              (fmt         (oc-citum--output-format backend-sym))
              (all-cites   (org-cite-list-citations info))
-             (occurrences (cl-loop for cit in all-cites
-                                   for i from 1
-                                   collect
-                                   (let ((sty (org-cite-citation-style cit info)))
-                                     (oc-citum--build-occurrence cit sty i))))
+             (occurrences (seq-map-indexed
+                           (lambda (cit i)
+                             (oc-citum--build-occurrence
+                              cit (org-cite-citation-style cit info) (1+ i)))
+                           all-cites))
              (params      (list :style style
                                 :refs  (list :kind "biblatex"
                                              :value bib-content)
@@ -300,14 +300,12 @@ Returns a plist with :citations-alist (id . text) and :bibliography."
              (bib-text (when bib-obj (plist-get bib-obj :content)))
              ;; Build alist: occurrence id -> rendered text
              (cit-alist
-              (cl-loop for fc across (or fc-vec [])
-                       collect (cons (plist-get fc :id)
-                                     (plist-get fc :text)))))
+              (seq-map (lambda (fc) (cons (plist-get fc :id) (plist-get fc :text)))
+                       (or fc-vec []))))
         ;; Build parallel list: (citation-element . occurrence-id) for lookup
         (let ((id-map
-               (cl-loop for cit in all-cites
-                        for i from 1
-                        collect (cons cit (format "cite-%d" i))))
+               (seq-map-indexed (lambda (cit i) (cons cit (format "cite-%d" (1+ i))))
+                                all-cites))
               (cache (list :citations-alist cit-alist
                            :id-map nil
                            :bibliography bib-text)))
