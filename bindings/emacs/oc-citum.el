@@ -41,6 +41,8 @@
 
 ;;; Code:
 
+(require 'cl-lib)
+(require 'subr-x)
 (require 'oc)
 (require 'org-element)
 
@@ -287,7 +289,8 @@ Returns a plist with :citations-alist (id . text) and :bibliography."
                                 :citations (vconcat occurrences)))
              (_ (when oc-citum-locale
                   (setq params (plist-put params :locale oc-citum-locale))))
-             (request  (list :id 1
+             (request  (list :jsonrpc "2.0"
+                             :id 1
                              :method "format_document"
                              :params params))
              (response (oc-citum--rpc request))
@@ -309,7 +312,12 @@ Returns a plist with :citations-alist (id . text) and :bibliography."
                            :id-map nil
                            :bibliography bib-text)))
           (setq cache (plist-put cache :id-map id-map))
-          (plist-put info oc-citum--plist-key cache)
+          ;; Use nconc to extend info destructively so the new key is
+          ;; visible to all subsequent callbacks that share the same info
+          ;; object.  plist-put for a new key only prepends a new cons cell
+          ;; and returns a new list — callers holding the original pointer
+          ;; would not see the update.
+          (nconc info (list oc-citum--plist-key cache))
           cache))))
 
 ;;;; Variant post-processing
@@ -318,7 +326,7 @@ Returns a plist with :citations-alist (id . text) and :bibliography."
   "Apply org-cite style VARIANT to rendered TEXT string.
 Handles `caps'/`c' (capitalize first char) and
 `bare'/`b' (strip outer brackets/parens)."
-  (when (and text variant)
+  (when (and text variant (not (string-empty-p text)))
     (when (member variant '("caps" "c" "bare-caps" "bc" "caps-full" "cf" "bare-caps-full" "bcf"))
       (setq text (concat (upcase (substring text 0 1)) (substring text 1))))
     (when (member variant '("bare" "b" "bare-caps" "bc" "bare-caps-full" "bcf"))

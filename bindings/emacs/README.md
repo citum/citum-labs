@@ -15,14 +15,20 @@ Works with any `.bib` bibliography, including your existing
 |-------------|---------|-------|
 | Emacs | ≥ 29.1 | uses `json-parse-string` / `json-serialize` |
 | Org mode | ≥ 9.6 | ships with Emacs 29+ |
-| `citum-server` | any | on `PATH` or set `CITUM_SERVER_PATH` |
+| `citum-server` | ≥ 0.62 (biblatex support) | on `PATH` or set `CITUM_SERVER_PATH` |
 
 ### Install `citum-server`
 
+`oc-citum` passes bibliography data as inline BibLaTeX
+(`{"kind":"biblatex","value":"..."}`) which requires citum-server built
+from the `feat/biblatex-refs-input` branch of citum-core or any release
+≥ 0.62.  Using an older binary will produce a confusing parse error.
+
 ```bash
-cargo install citum-server --no-default-features
-# or build from the citum-core repo:
+# Build the biblatex-capable server from source:
+git clone https://github.com/citum/citum-core
 cd citum-core
+git checkout feat/biblatex-refs-input   # until merged to main
 cargo build -p citum-server --release --no-default-features
 export CITUM_SERVER_PATH="$PWD/target/release/citum-server"
 ```
@@ -96,7 +102,7 @@ Declare styles with `[cite/STYLE/VARIANT:@key]` in Org documents.
 | `author` | `a` | `mode: integral` | `Author (2024)` |
 | `noauthor` | `na` | `suppress_author: true` | `(2024)` |
 | `year` | `y` | `suppress_author: true` | `(2024)` |
-| `nocite` | `n` | included in bibliography only | *(no inline text)* |
+| `nocite` | `n` | included in bibliography only | `(Author, 2024)` *(inline suppression pending)* |
 
 ### Variants (append after a second `/`)
 
@@ -105,7 +111,7 @@ Declare styles with `[cite/STYLE/VARIANT:@key]` in Org documents.
 | `caps` | `c` | Capitalize first character |
 | `bare` | `b` | Strip surrounding brackets/parens |
 | `bare-caps` | `bc` | Both |
-| `full` | `f` | (passed to server; style-dependent) |
+| `full` | `f` | *(reserved; no-op in current implementation)* |
 | `caps-full` | `cf` | Capitalize + full |
 | `bare-caps-full` | `bcf` | All three |
 
@@ -119,7 +125,7 @@ Declare styles with `[cite/STYLE/VARIANT:@key]` in Org documents.
 [cite/t//c:@key]         → Author (2024)   ← integral + caps
 [cite:@key p. 42]        → (Author, 2024, p. 42)
 [cite:@a; @b]            → (A, 2024; B, 2020)
-[cite/n:@key]            → (no inline text; entry added to bibliography)
+[cite/n:@key]            → (Author, 2024)  ← also renders inline (see limitations)
 ```
 
 **Known limitations / best-effort styles:**

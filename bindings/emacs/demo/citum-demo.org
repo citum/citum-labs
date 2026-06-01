@@ -38,7 +38,9 @@ the canonical study of the footnote as institution.
 
 ** Nocite (bibliography-only)
 
-The following entry appears in the bibliography but not inline:
+The following entry is marked for bibliography inclusion.  Note: it
+currently also renders an inline citation — full inline suppression is
+a known limitation pending a citum-server-side flag.
 [cite/n:@garcia2022].
 
 ** A fuller note
