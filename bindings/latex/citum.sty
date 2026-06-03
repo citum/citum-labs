@@ -124,6 +124,35 @@
   \directlua{citum_module.cites_flush_integral(citum_proc)}%
 }
 
+% Sentence-initial variants — capitalize the first character of the composed output.
+% Mirrors biblatex \Cite, \Textcite, \Cites, \Textcites (capitalized forms).
+% Use at the start of a sentence when the citation opens the clause.
+\newcommand{\Cite}[2][]{%
+  \directlua{citum_module.Cite_single(citum_proc,
+    "\luaescapestring{#1}", "\luaescapestring{#2}")}%
+}
+
+\newcommand{\Textcite}[2][]{%
+  \directlua{citum_module.Textcite_single(citum_proc,
+    "\luaescapestring{#1}", "\luaescapestring{#2}")}%
+}
+
+\newcommand{\Cites}[1]{%
+  \directlua{citum_module.Cite_keys(citum_proc, "\luaescapestring{#1}")}%
+}
+
+\newcommand{\Textcites}[1]{%
+  \directlua{citum_module.Textcite_keys(citum_proc, "\luaescapestring{#1}")}%
+}
+
+\newcommand{\Citeend}{%
+  \directlua{citum_module.cites_flush_sentence_start(citum_proc)}%
+}
+
+\newcommand{\Textciteend}{%
+  \directlua{citum_module.cites_flush_integral_sentence_start(citum_proc)}%
+}
+
 % Switch style or bib file at runtime
 \newcommand{\citumsetup}[1]{%
   \setkeys{citum}{#1}%

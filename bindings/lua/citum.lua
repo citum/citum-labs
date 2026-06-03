@@ -336,6 +336,7 @@ local function generate_cite_json(opts)
 
     local root = {'"items":[' .. table.concat(items, ",") .. ']'}
     if opts.mode then table.insert(root, '"mode":"' .. json_escape(opts.mode) .. '"') end
+    if opts.sentence_start then table.insert(root, '"sentence-start":true') end
     if opts.prefix then table.insert(root, '"prefix":"' .. json_escape(opts.prefix) .. '"') end
     if opts.suffix then table.insert(root, '"suffix":"' .. json_escape(opts.suffix) .. '"') end
 
@@ -542,6 +543,7 @@ function CITUM.process_document(proc, style_path, bib_path, locale)
             end
             local occ = { id = "cite-" .. i, items = items }
             if c.mode then occ.mode = c.mode end
+            if c.sentence_start then occ["sentence-start"] = true end
             table.insert(citation_occs, occ)
         end
         local params = {
@@ -706,6 +708,15 @@ function CITUM.cites_flush_integral(_proc)
     CITUM.record_cite({ mode = "integral", items = CITUM.cites_items })
 end
 
+-- Sentence-initial flush variants (capitalized \Citeend / \Textciteend)
+function CITUM.cites_flush_sentence_start(_proc)
+    CITUM.record_cite({ sentence_start = true, items = CITUM.cites_items })
+end
+
+function CITUM.cites_flush_integral_sentence_start(_proc)
+    CITUM.record_cite({ mode = "integral", sentence_start = true, items = CITUM.cites_items })
+end
+
 function CITUM.cite_single(_proc, raw_loc, key)
     local label, locator = CITUM.parse_locator(raw_loc)
     local item = { id = key, label = label, locator = locator }
@@ -716,6 +727,20 @@ function CITUM.textcite_single(_proc, raw_loc, key)
     local label, locator = CITUM.parse_locator(raw_loc)
     local item = { id = key, label = label, locator = locator }
     CITUM.record_cite({ mode = "integral", items = { item } })
+end
+
+-- Sentence-initial variants: capitalize the first character of the composed output.
+-- Mirrors biblatex \Cite, \Textcite, \Cites, \Textcites.
+function CITUM.Cite_single(_proc, raw_loc, key)
+    local label, locator = CITUM.parse_locator(raw_loc)
+    local item = { id = key, label = label, locator = locator }
+    CITUM.record_cite({ sentence_start = true, items = { item } })
+end
+
+function CITUM.Textcite_single(_proc, raw_loc, key)
+    local label, locator = CITUM.parse_locator(raw_loc)
+    local item = { id = key, label = label, locator = locator }
+    CITUM.record_cite({ mode = "integral", sentence_start = true, items = { item } })
 end
 
 function CITUM.cite_keys(_proc, keys_str)
@@ -732,6 +757,22 @@ function CITUM.textcite_keys(_proc, keys_str)
         table.insert(items, { id = k })
     end
     CITUM.record_cite({ mode = "integral", items = items })
+end
+
+function CITUM.Cite_keys(_proc, keys_str)
+    local items = {}
+    for _, k in ipairs(CITUM.split_keys(keys_str)) do
+        table.insert(items, { id = k })
+    end
+    CITUM.record_cite({ sentence_start = true, items = items })
+end
+
+function CITUM.Textcite_keys(_proc, keys_str)
+    local items = {}
+    for _, k in ipairs(CITUM.split_keys(keys_str)) do
+        table.insert(items, { id = k })
+    end
+    CITUM.record_cite({ mode = "integral", sentence_start = true, items = items })
 end
 
 function CITUM.init_processor(style_opt, bibfile, locale_opt, jobname, server_path_opt)
