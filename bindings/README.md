@@ -33,15 +33,15 @@ cargo build --package citum-server --release --no-default-features
 ```
 
 Best for **TeX Live distribution** and other contexts where packages may not
-include compiled shared libraries. The LuaLaTeX binding automatically uses pipe
-mode when `libcitum_engine` is not found and `citum-server` is available on
-`PATH` (or `CITUM_SERVER_PATH` is set). No configuration needed.
+include compiled shared libraries. Current LuaLaTeX work has moved to the
+standalone `citum-latex` package, which is pipe-only and uses `citum-server`
+without any FFI fallback.
 
 ## For Developers
 
 ### Lua / LuaLaTeX
-See [bindings/lua/lua-latex.md](./lua/lua-latex.md) for detailed integration
-instructions.
+The labs LuaLaTeX notes are historical. Use the standalone `citum-latex`
+repository for current package instructions.
 
 ### Python
 Python developers can use `ctypes` or `cffi` to load the shared library.
